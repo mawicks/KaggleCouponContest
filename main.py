@@ -2,7 +2,9 @@ import codecs
 import collections
 import csv
 import datetime
+from functools import reduce
 import logging
+import operator
 import math
 
 # import pandas as pd
@@ -170,10 +172,14 @@ small_area_name_set = set()
 capsule_text_set = set()
 genre_name_set = set()
 
+# Build indexes for frequently accessed data:
+
 # Purchase
 purchase_by_user = {}
+purchase_by_user_coupon_date = {}
 for p in purchase.values():
     purchase_by_user.setdefault(p.USER_ID_hash.USER_ID_hash, []).append(p)
+    purchase_by_user_coupon_date[(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, p.I_DATE)] = 1
 
 # Visit
 visit_by_user = {}
@@ -272,26 +278,18 @@ class JointFeatureSet:
         return ('distance',)
     
     def map (self, user_history, coupon, date):
-        return (prefecture_distance(user_history.user.PREF_NAME, coupon.ken_name))
+        return (prefecture_distance(user_history.user.PREF_NAME, coupon.ken_name),)
     
 # dump(user_history)
 
-feature_set = SimpleUserFeatureSet()
+feature_extractors = (SimpleUserFeatureSet(), SimpleCouponFeatureSet(), JointFeatureSet())
 
-logger.info('Feature names: {0}'.format(', '.join(feature_set.names())))
-logger.info('Features:      {0}'.format(feature_set.map(user_history['280f0cedda5c4b171ee6245889659571'],
-                                                        coupon['31a605db6db5ad3fa3b2d4cf69ae3272'],
-                                                        datetime.date(year=2012, month=5, day=10))))
+feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 
-feature_set = SimpleCouponFeatureSet()
-logger.info('Feature names: {0}'.format(', '.join(feature_set.names())))
-logger.info('Features:      {0}'.format(feature_set.map(user_history['280f0cedda5c4b171ee6245889659571'],
-                                                        coupon['31a605db6db5ad3fa3b2d4cf69ae3272'],
-                                                        datetime.date(year=2012, month=5, day=10))))
-feature_set = JointFeatureSet()
-logger.info('Feature names: {0}'.format(', '.join(feature_set.names())))
-logger.info('Features:      {0}'.format(feature_set.map(user_history['280f0cedda5c4b171ee6245889659571'],
-                                                        coupon['31a605db6db5ad3fa3b2d4cf69ae3272'],
-                                                        datetime.date(year=2012, month=5, day=10))))
+features = reduce (operator.add, (fe.map(user_history['280f0cedda5c4b171ee6245889659571'],
+                                         coupon['31a605db6db5ad3fa3b2d4cf69ae3272'],
+                                         datetime.date(year=2012, month=5, day=10)) for fe in feature_extractors))
+
+logger.info('Features: {0}'.format(dict(zip(feature_names, features))))
 
 logger.debug('Done.')
