@@ -6,6 +6,7 @@ from functools import reduce
 import logging
 import operator
 import math
+import random
 
 # import pandas as pd
 
@@ -24,9 +25,20 @@ def dump(d):
 
 # translation = dict(pd.read_csv('CAPSULE_TEXT_Translation.csv').values)
 
-def date_mapper(d):
+def date_mapper_max(d):
     if d == 'NA':
         timestamp = datetime.datetime.max
+    else:
+        try: 
+            timestamp = datetime.datetime.strptime(d, '%Y-%m-%d %H:%M:%S')
+        except:
+            timestamp = datetime.datetime.strptime(d, '%Y-%m-%d')
+                        
+    return timestamp.date()
+
+def date_mapper_min(d):
+    if d == 'NA':
+        timestamp = datetime.datetime.min
     else:
         try: 
             timestamp = datetime.datetime.strptime(d, '%Y-%m-%d %H:%M:%S')
@@ -50,14 +62,14 @@ def str_mapper(s):
 mapper = collections.defaultdict(lambda: str_mapper)
 mapper.update(
     {
-        'DISPEND': date_mapper,
-        'DISPFROM': date_mapper,
-        'I_DATE': date_mapper,
-        'REG_DATE': date_mapper,
-        'WITHDRAW_DATE': date_mapper,
+        'DISPEND': date_mapper_max,
+        'DISPFROM': date_mapper_min,
+        'I_DATE': date_mapper_max,
+        'REG_DATE': date_mapper_min,
+        'WITHDRAW_DATE': date_mapper_max,
         
-        'VALIDFROM': date_mapper,
-        'VALIDEND': date_mapper,
+        'VALIDFROM': date_mapper_min,
+        'VALIDEND': date_mapper_max,
 
         'AGE': int,
         'CATALOG_PRICE': int,
@@ -156,6 +168,11 @@ missing_coupon = Coupon(CAPSULE_TEXT=None,
 purchase = dict ( (k, v._replace(USER_ID_hash=user[v.USER_ID_hash],
                                   COUPON_ID_hash=coupon[v.COUPON_ID_hash]))
                    for k,v in read_file('coupon_detail_train.csv', 'Purchase', 'PURCHASEID_hash').items() )
+
+first_purchase_date = min((p.I_DATE for p in purchase.values()))
+last_purchase_date = max((p.I_DATE for p in purchase.values()))
+
+logger.info('Min/Max purchase dates: {0}/{1}'.format(first_purchase_date, last_purchase_date))
 
 visit = tuple( v._replace(USER_ID_hash=user[v.USER_ID_hash],
                            VIEW_COUPON_ID_hash=coupon.get(v.VIEW_COUPON_ID_hash, missing_coupon),
@@ -291,5 +308,25 @@ features = reduce (operator.add, (fe.map(user_history['280f0cedda5c4b171ee624588
                                          datetime.date(year=2012, month=5, day=10)) for fe in feature_extractors))
 
 logger.info('Features: {0}'.format(dict(zip(feature_names, features))))
+
+# Resample the probability space to get failed cases
+# The space is assumed to be (user, coupon, date) tuples
+# where date is in the overlap region where the user is registered and the coupon is displayed
+user_list = tuple(user.values())
+coupon_list = tuple(coupon.values())
+
+logger.info ('Sampling space to get some non-purchase outcomes')
+for i in range(1000000):
+    random_user = user_list[random.randrange(len(user_list))]
+    random_coupon = coupon_list[random.randrange(len(coupon_list))]
+
+    start_date = max(first_purchase_date, random_user.REG_DATE, random_coupon.VALIDFROM)
+    end_date = min(last_purchase_date, random_user.WITHDRAW_DATE, random_coupon.VALIDEND)
+
+    if start_date <= end_date:
+        random_date = start_date + datetime.timedelta(days=random.randrange((end_date-start_date).days+1))
+        result = purchase_by_user_coupon_date.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date), 0)
+        if result != 0:
+            logger.info('Selection: {0}, {1}, {2} -> {3}'.format(random_user, random_coupon, random_date, result))
 
 logger.debug('Done.')
