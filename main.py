@@ -7,6 +7,8 @@ import logging
 import operator
 import math
 import random
+import sklearn
+import sklearn.ensemble
 
 # import pandas as pd
 
@@ -131,7 +133,7 @@ def prefecture_distance(pref1, pref2):
     try:
         loc1 = prefecture_locations[pref1]
         loc2 = prefecture_locations[pref2]
-        result = earth_distance((loc1.LATITUDE,loc1.LONGITUDE), (loc2.LATITUDE,loc2.LONGITUDE))
+        result = float(int(earth_distance((loc1.LATITUDE,loc1.LONGITUDE), (loc2.LATITUDE,loc2.LONGITUDE))))
     except:
         result = -99999.0
 
@@ -172,7 +174,7 @@ purchase = dict ( (k, v._replace(USER_ID_hash=user[v.USER_ID_hash],
 first_purchase_date = min((p.I_DATE for p in purchase.values()))
 last_purchase_date = max((p.I_DATE for p in purchase.values()))
 
-logger.info('Min/Max purchase dates: {0}/{1}'.format(first_purchase_date, last_purchase_date))
+logger.info('First/last purchase dates: {0}/{1}'.format(first_purchase_date, last_purchase_date))
 
 visit = tuple( v._replace(USER_ID_hash=user[v.USER_ID_hash],
                            VIEW_COUPON_ID_hash=coupon.get(v.VIEW_COUPON_ID_hash, missing_coupon),
@@ -256,6 +258,13 @@ genre_name_encoder = CategoryEncoder(genre_name_set)
 small_area_name_encoder = CategoryEncoder(small_area_name_set)
 gender_encoder = CategoryEncoder(('m', 'f'))
 
+class RandomFeatureSet:
+    def names(self):
+        return ('random_feature',)
+
+    def map (self, user_history, coupon, date):
+        return (random.randrange(2),)
+
 class SimpleUserFeatureSet:
     def names(self):
         return ('age', 'gender', 'prefecture', 'days_as_member')
@@ -271,9 +280,11 @@ class SimpleCouponFeatureSet:
     def names(self):
         return ('capsule_text', 'genre_name',
                 'large_area_name', 'ken_name', 'small_area_name',
-                'price_rate', 'catalog_price', 'discount_price', 'valid_period',
+                'price_rate', 'catalog_price', 'discount_price',
+                'price_reduction',
+                'valid_period',
                 'days_on_display', 'display_days_left',
-                'days_until_valid', 'days_until_experation')
+                'days_until_valid', 'days_until_expiration')
 
     def map (self, user_history, coupon, date):
         return (capsule_encoder.map(coupon.CAPSULE_TEXT),
@@ -284,6 +295,7 @@ class SimpleCouponFeatureSet:
                 coupon.PRICE_RATE,
                 coupon.CATALOG_PRICE,
                 coupon.DISCOUNT_PRICE,
+                coupon.CATALOG_PRICE-coupon.DISCOUNT_PRICE,
                 coupon.VALIDPERIOD,
                 (date - coupon.DISPFROM).days,
                 (coupon.DISPEND - date).days,
@@ -299,15 +311,17 @@ class JointFeatureSet:
     
 # dump(user_history)
 
-feature_extractors = (SimpleUserFeatureSet(), SimpleCouponFeatureSet(), JointFeatureSet())
+feature_extractors = (SimpleUserFeatureSet(), SimpleCouponFeatureSet(), JointFeatureSet(), RandomFeatureSet())
+
+def features(user_hash, coupon_hash, date):
+    return reduce (operator.add, (fe.map(user_history[user_hash],
+                                         coupon[coupon_hash],
+                                         date) for fe in feature_extractors))
 
 feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 
-features = reduce (operator.add, (fe.map(user_history['280f0cedda5c4b171ee6245889659571'],
-                                         coupon['31a605db6db5ad3fa3b2d4cf69ae3272'],
-                                         datetime.date(year=2012, month=5, day=10)) for fe in feature_extractors))
-
-logger.info('Features: {0}'.format(dict(zip(feature_names, features))))
+logger.info('Features: {0}'.format(dict(zip(feature_names,
+                                            features('280f0cedda5c4b171ee6245889659571', '31a605db6db5ad3fa3b2d4cf69ae3272', datetime.date(year=2012, month=5, day=10))))))
 
 # Resample the probability space to get failed cases
 # The space is assumed to be (user, coupon, date) tuples
@@ -315,18 +329,69 @@ logger.info('Features: {0}'.format(dict(zip(feature_names, features))))
 user_list = tuple(user.values())
 coupon_list = tuple(coupon.values())
 
+N = 10000
+
+purchase_sample = random.sample(tuple(purchase.values()), N//2)
+training_features = []
+for p in purchase_sample:
+    f = features(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, p.I_DATE)
+    training_features.append(f)
+    logger.info('(P) {0}'.format(f))
+    
+
+nonpurchase_sample = []
 logger.info ('Sampling space to get some non-purchase outcomes')
-for i in range(1000000):
+nonpurchase_count = 0
+nonpurchase_count = 0
+while nonpurchase_count < N//2:
     random_user = user_list[random.randrange(len(user_list))]
     random_coupon = coupon_list[random.randrange(len(coupon_list))]
-
-    start_date = max(first_purchase_date, random_user.REG_DATE, random_coupon.VALIDFROM)
-    end_date = min(last_purchase_date, random_user.WITHDRAW_DATE, random_coupon.VALIDEND)
-
+    
+    start_date = max(first_purchase_date, random_user.REG_DATE, random_coupon.DISPFROM)
+    end_date = min(last_purchase_date, random_user.WITHDRAW_DATE, random_coupon.DISPEND)
+    
     if start_date <= end_date:
         random_date = start_date + datetime.timedelta(days=random.randrange((end_date-start_date).days+1))
         result = purchase_by_user_coupon_date.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date), 0)
-        if result != 0:
+        if result == 0:
+            f = features(random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date)
+            logger.info('(N) {0}'.format(f))
+            training_features.append(f)
+            nonpurchase_count += 1
+        else:
             logger.info('Selection: {0}, {1}, {2} -> {3}'.format(random_user, random_coupon, random_date, result))
+            
+training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
+
+regressor = sklearn.ensemble.RandomForestRegressor(n_estimators=100, min_samples_leaf=75, oob_score=True, verbose=1)
+# regressor = sklearn.ensemble.RandomForestClassifier(n_estimators=100, min_samples_leaf=75, oob_score=True, verbose=1)
+
+regressor.fit(training_features, training_outcomes)
+regressor.fit(training_features, training_outcomes)
+
+training_score = regressor.score(training_features, training_outcomes)
+
+for o,f in zip(training_outcomes, training_features):
+    logger.info('{0}: {1}'.format(o, f))
+
+logger.info('{0:>24}: {1}'.format('importances', dict(zip(feature_names, regressor.feature_importances_))))
+logger.info('{0:>24}: {1}'.format('feature names', feature_names))
+logger.info('{0:>24}: {1:5.3f}/{2:5.3f}'.format('training/oob r-squared', training_score, regressor.oob_score_))
+logger.info('{0:>24}: {1:5.4f}/{2:5.4f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
+logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(training_outcomes, regressor.oob_prediction_)))
 
 logger.debug('Done.')
+
+
+coupon_test = read_file('coupon_list_train.csv', 'Coupon', 'COUPON_ID_hash')
+coupon_hash_test_list = tuple((coupon.COUPON_ID_hash for coupon in coupon_test.values()))
+
+d = datetime.date(year=2012, month=6, day=24)
+for user in user_list:
+    f = tuple(( features(user.USER_ID_hash, coupon_hash, random_date) for
+                coupon_hash in coupon_hash_test_list ))
+    prediction = regressor.predict(f)
+    x = sorted(zip(prediction,coupon_hash_test_list))
+    logger.info('{0}: {1}'.format(user.USER_ID_hash, x))
+    
+    
