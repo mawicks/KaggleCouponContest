@@ -1,4 +1,5 @@
 *.csv
+*~
 Zip
 documentation
 __pycache__
