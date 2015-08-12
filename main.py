@@ -6,12 +6,14 @@ from functools import reduce
 import logging
 import operator
 import math
+import numpy
 import random
 import sklearn
 import sklearn.ensemble
 
 # import pandas as pd
 
+random.seed(123456)
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
@@ -313,39 +315,36 @@ class JointFeatureSet:
 
 feature_extractors = (SimpleUserFeatureSet(), SimpleCouponFeatureSet(), JointFeatureSet(), RandomFeatureSet())
 
-def features(user_hash, coupon_hash, date):
-    return reduce (operator.add, (fe.map(user_history[user_hash],
-                                         coupon[coupon_hash],
+def features(user_history, coupon, date):
+    return reduce (operator.add, (fe.map(user_history,
+                                         coupon,
                                          date) for fe in feature_extractors))
 
 feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 
-logger.info('Features: {0}'.format(dict(zip(feature_names,
-                                            features('280f0cedda5c4b171ee6245889659571', '31a605db6db5ad3fa3b2d4cf69ae3272', datetime.date(year=2012, month=5, day=10))))))
-
 # Resample the probability space to get failed cases
 # The space is assumed to be (user, coupon, date) tuples
 # where date is in the overlap region where the user is registered and the coupon is displayed
-user_list = tuple(user.values())
+user_history_list = tuple(user_history.values())
 coupon_list = tuple(coupon.values())
 
-N = 10000
+N = 20000
 
 purchase_sample = random.sample(tuple(purchase.values()), N//2)
 training_features = []
 for p in purchase_sample:
-    f = features(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, p.I_DATE)
+    f = features(user_history[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE)
     training_features.append(f)
-    logger.info('(P) {0}'.format(f))
-    
 
 nonpurchase_sample = []
+
 logger.info ('Sampling space to get some non-purchase outcomes')
 nonpurchase_count = 0
 nonpurchase_count = 0
 while nonpurchase_count < N//2:
-    random_user = user_list[random.randrange(len(user_list))]
+    random_user_history = user_history_list[random.randrange(len(user_history_list))]
     random_coupon = coupon_list[random.randrange(len(coupon_list))]
+    random_user = random_user_history.user
     
     start_date = max(first_purchase_date, random_user.REG_DATE, random_coupon.DISPFROM)
     end_date = min(last_purchase_date, random_user.WITHDRAW_DATE, random_coupon.DISPEND)
@@ -354,25 +353,19 @@ while nonpurchase_count < N//2:
         random_date = start_date + datetime.timedelta(days=random.randrange((end_date-start_date).days+1))
         result = purchase_by_user_coupon_date.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date), 0)
         if result == 0:
-            f = features(random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date)
-            logger.info('(N) {0}'.format(f))
+            f = features(random_user_history, random_coupon, random_date)
             training_features.append(f)
             nonpurchase_count += 1
-        else:
-            logger.info('Selection: {0}, {1}, {2} -> {3}'.format(random_user, random_coupon, random_date, result))
             
 training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
 
-regressor = sklearn.ensemble.RandomForestRegressor(n_estimators=100, min_samples_leaf=75, oob_score=True, verbose=1)
+regressor = sklearn.ensemble.RandomForestRegressor(n_estimators=200, min_samples_leaf=75, oob_score=True)
 # regressor = sklearn.ensemble.RandomForestClassifier(n_estimators=100, min_samples_leaf=75, oob_score=True, verbose=1)
 
-regressor.fit(training_features, training_outcomes)
+logger.info('Training...')
 regressor.fit(training_features, training_outcomes)
 
 training_score = regressor.score(training_features, training_outcomes)
-
-for o,f in zip(training_outcomes, training_features):
-    logger.info('{0}: {1}'.format(o, f))
 
 logger.info('{0:>24}: {1}'.format('importances', dict(zip(feature_names, regressor.feature_importances_))))
 logger.info('{0:>24}: {1}'.format('feature names', feature_names))
@@ -380,18 +373,30 @@ logger.info('{0:>24}: {1:5.3f}/{2:5.3f}'.format('training/oob r-squared', traini
 logger.info('{0:>24}: {1:5.4f}/{2:5.4f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
 logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(training_outcomes, regressor.oob_prediction_)))
 
-logger.debug('Done.')
+coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
 
+bias_correct = numpy.vectorize(lambda x: x / (x + 1e6*(1-x)))
 
-coupon_test = read_file('coupon_list_train.csv', 'Coupon', 'COUPON_ID_hash')
-coupon_hash_test_list = tuple((coupon.COUPON_ID_hash for coupon in coupon_test.values()))
+logger.info('Scoring and writing output file.')
+with open("submission.csv", "w") as outputfile:
+    writer = csv.writer(outputfile)
+    writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
+                    
+    d = datetime.date(year=2012, month=6, day=24)
+    for user_hash in sorted(user_history.keys()):
+        a_user_history = user_history[user_hash]
 
-d = datetime.date(year=2012, month=6, day=24)
-for user in user_list:
-    f = tuple(( features(user.USER_ID_hash, coupon_hash, random_date) for
-                coupon_hash in coupon_hash_test_list ))
-    prediction = regressor.predict(f)
-    x = sorted(zip(prediction,coupon_hash_test_list))
-    logger.info('{0}: {1}'.format(user.USER_ID_hash, x))
-    
-    
+        probabilities  = numpy.zeros(len(coupon_test))
+        
+        for days in range(7):
+            rd = d + datetime.timedelta(days=days)
+            f = tuple( (features(a_user_history, coupon, d + datetime.timedelta(days=days)) for
+                        coupon in coupon_test.values()) )
+            probabilities += bias_correct(regressor.predict(f))
+            
+            x = sorted(zip(probabilities, (coupon.COUPON_ID_hash for coupon in coupon_test.values())), reverse=True)
+
+        winners = ' '.join(tuple( (y[1] for y in x[0:10]) ))
+        writer.writerow((user_hash, winners))
+
+logger.info('Finished.')
