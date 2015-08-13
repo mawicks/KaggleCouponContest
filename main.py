@@ -11,9 +11,14 @@ import random
 import sklearn
 import sklearn.ensemble
 
-# import pandas as pd
+# Parameters
+random_state = random.Random(123456)
+random_state.seed(12345)
+classifier_random_state = numpy.random.RandomState(seed=987654)
+classifier_random_state.seed(12345)
 
-random.seed(123456)
+N = 20000
+n_estimators = 200
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
@@ -114,8 +119,10 @@ def read_file (filename, item_type_name, index=None):
         globals()[item_type_name] = Type
 
         if index != None:
-            result = dict( (o.__getattribute__(index), o)
-                           for o in ( Type._make((m(i) for m,i in zip(item_mapper, line))) for line in reader ) )
+            result = collections.OrderedDict(
+                (o.__getattribute__(index), o)
+                for o in ( Type._make((m(i) for m,i in zip(item_mapper, line))) for line in reader )
+            )
         else:
             result = tuple( Type._make((m(i) for m,i in zip(item_mapper, line))) for line in reader )
     logger.info ('{1:,} {2} objects created from {0}'.format(filename, len(result), item_type_name))
@@ -169,14 +176,11 @@ missing_coupon = Coupon(CAPSULE_TEXT=None,
                         small_area_name=None,
                         COUPON_ID_hash='*MISSING*')
 
-purchase = dict ( (k, v._replace(USER_ID_hash=user[v.USER_ID_hash],
-                                  COUPON_ID_hash=coupon[v.COUPON_ID_hash]))
-                   for k,v in read_file('coupon_detail_train.csv', 'Purchase', 'PURCHASEID_hash').items() )
-
-first_purchase_date = min((p.I_DATE for p in purchase.values()))
-last_purchase_date = max((p.I_DATE for p in purchase.values()))
-
-logger.info('First/last purchase dates: {0}/{1}'.format(first_purchase_date, last_purchase_date))
+purchase = collections.OrderedDict (
+    (k, v._replace(USER_ID_hash=user[v.USER_ID_hash],
+                   COUPON_ID_hash=coupon[v.COUPON_ID_hash]))
+    for k,v in read_file('coupon_detail_train.csv', 'Purchase', 'PURCHASEID_hash').items()
+)
 
 visit = tuple( v._replace(USER_ID_hash=user[v.USER_ID_hash],
                            VIEW_COUPON_ID_hash=coupon.get(v.VIEW_COUPON_ID_hash, missing_coupon),
@@ -193,22 +197,38 @@ small_area_name_set = set()
 capsule_text_set = set()
 genre_name_set = set()
 
-# Build indexes for frequently accessed data:
+# Scan through data to build indexes for frequently accessed data
+# and to accumulate any other useful statistics:
+logger.info('Scanning data...')
+
+first_purchase_date = min((p.I_DATE for p in purchase.values()))
+last_purchase_date = max((p.I_DATE for p in purchase.values()))
+
+def is_displayable(user, coupon, date):
+    start_date = max(user.REG_DATE, coupon.DISPFROM)
+    end_date = min(user.WITHDRAW_DATE, coupon.DISPEND)
+    return 1 if date >= start_date and date <= end_date else 0
+
+logger.info('First/last purchase dates: {0}/{1}'.format(first_purchase_date, last_purchase_date))
 
 # Purchase
-purchase_by_user = {}
-purchase_by_user_coupon_date = {}
+purchase_by_user = collections.OrderedDict()
+purchase_by_user_coupon_date = collections.OrderedDict()
 for p in purchase.values():
     purchase_by_user.setdefault(p.USER_ID_hash.USER_ID_hash, []).append(p)
     purchase_by_user_coupon_date[(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, p.I_DATE)] = 1
 
+    # Verify the assumption that purchases do not occur outside the ad display window or when the user is not registered.
+    if not is_displayable(user[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE):
+        logger.warn('Sale w/o display?  \n\tuser:{0}, \n\tcoupon:{1}, \n\tdate:{2}'.format(p.USER_ID_hash, p.COUPON_ID_hash, p.I_DATE))
+
 # Visit
-visit_by_user = {}
+visit_by_user = collections.OrderedDict()
 for v in visit:
     visit_by_user.setdefault(v.USER_ID_hash.USER_ID_hash, []).append(v)
 
 # Area
-area_by_coupon = {}
+area_by_coupon = collections.OrderedDict()
 for a in area:
     area_by_coupon.setdefault(a.COUPON_ID_hash, []).append(a)
     prefecture_set.add(a.PREF_NAME)
@@ -223,7 +243,7 @@ for h,c in coupon.items():
     small_area_name_set.add(c.small_area_name)
 
 # User
-user_history = {}
+user_history = collections.OrderedDict()
 UserHistory = collections.namedtuple('UserHistory', ['user', 'visit', 'purchase'])
 for h,u in user.items():
     user_history[h] = UserHistory(user=u, visit=visit_by_user.get(h, []), purchase=purchase_by_user.get(h, []))
@@ -265,7 +285,7 @@ class RandomFeatureSet:
         return ('random_feature',)
 
     def map (self, user_history, coupon, date):
-        return (random.randrange(2),)
+        return (random_state.randrange(2),)
 
 class SimpleUserFeatureSet:
     def names(self):
@@ -328,9 +348,9 @@ feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 user_history_list = tuple(user_history.values())
 coupon_list = tuple(coupon.values())
 
-N = 20000
+random_state.seed(123456)
+purchase_sample = random_state.sample(tuple(purchase.values()), N//2)
 
-purchase_sample = random.sample(tuple(purchase.values()), N//2)
 training_features = []
 for p in purchase_sample:
     f = features(user_history[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE)
@@ -338,19 +358,19 @@ for p in purchase_sample:
 
 nonpurchase_sample = []
 
-logger.info ('Sampling space to get some non-purchase outcomes')
+logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
 nonpurchase_count = 0
 while nonpurchase_count < N//2:
-    random_user_history = user_history_list[random.randrange(len(user_history_list))]
-    random_coupon = coupon_list[random.randrange(len(coupon_list))]
+    random_user_history = user_history_list[random_state.randrange(len(user_history_list))]
+    random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     random_user = random_user_history.user
     
     start_date = max(first_purchase_date, random_user.REG_DATE, random_coupon.DISPFROM)
     end_date = min(last_purchase_date, random_user.WITHDRAW_DATE, random_coupon.DISPEND)
     
     if start_date <= end_date:
-        random_date = start_date + datetime.timedelta(days=random.randrange((end_date-start_date).days+1))
+        random_date = start_date + datetime.timedelta(days=random_state.randrange((end_date-start_date).days+1))
         result = purchase_by_user_coupon_date.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date), 0)
         if result == 0:
             f = features(random_user_history, random_coupon, random_date)
@@ -359,18 +379,20 @@ while nonpurchase_count < N//2:
             
 training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
 
-regressor = sklearn.ensemble.RandomForestRegressor(n_estimators=200, min_samples_leaf=75, oob_score=True)
-# regressor = sklearn.ensemble.RandomForestClassifier(n_estimators=100, min_samples_leaf=75, oob_score=True, verbose=1)
+regressor = sklearn.ensemble.RandomForestRegressor(random_state=classifier_random_state,
+                                                   n_estimators=n_estimators,
+                                                   min_samples_leaf=75,
+                                                   oob_score=True)
 
 logger.info('Training...')
-regressor.fit(training_features, training_outcomes)
 
+regressor.fit(training_features, training_outcomes)
 training_score = regressor.score(training_features, training_outcomes)
 
 logger.info('{0:>24}: {1}'.format('importances', dict(zip(feature_names, regressor.feature_importances_))))
 logger.info('{0:>24}: {1}'.format('feature names', feature_names))
-logger.info('{0:>24}: {1:5.3f}/{2:5.3f}'.format('training/oob r-squared', training_score, regressor.oob_score_))
-logger.info('{0:>24}: {1:5.4f}/{2:5.4f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
+logger.info('{0:>24}: {1:6.4f}/{2:6.4f}'.format('training/oob r-squared', training_score, regressor.oob_score_))
+logger.info('{0:>24}: {1:7.5f}/{2:7.5f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
 logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(training_outcomes, regressor.oob_prediction_)))
 
 coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
@@ -382,20 +404,30 @@ with open("submission.csv", "w") as outputfile:
     writer = csv.writer(outputfile)
     writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
                     
-    d = datetime.date(year=2012, month=6, day=24)
+    first_test_date = datetime.date(year=2012, month=6, day=24)
     for user_hash in sorted(user_history.keys()):
         a_user_history = user_history[user_hash]
 
         probabilities  = numpy.zeros(len(coupon_test))
-        
-        for days in range(7):
-            rd = d + datetime.timedelta(days=days)
-            f = tuple( (features(a_user_history, coupon, d + datetime.timedelta(days=days)) for
-                        coupon in coupon_test.values()) )
-            probabilities += bias_correct(regressor.predict(f))
-            
-            x = sorted(zip(probabilities, (coupon.COUPON_ID_hash for coupon in coupon_test.values())), reverse=True)
 
+        for days in range(7):
+            a_date = first_test_date + datetime.timedelta(days=days)
+            d, f, h = zip(*tuple(( (is_displayable(a_user_history.user, coupon, a_date),
+                                    features(a_user_history, coupon, a_date),
+                                    coupon.COUPON_ID_hash)
+                                   for coupon in coupon_test.values() ) ))
+            
+            # It's okay to add probabilities here because they are small after bias correction.
+            # As the final probability, we want 1 - \prod (1-p_i), but this is approximately \sum p_i.
+            # Also, ignore returned probabilities when the ad isn't displayed by setting them to zero.
+            # Negative examples were sampled over a set where displayed==1 and
+            # there were no examples of purchases where displayed==0 in the training data.
+            # The predictor will return incorrect results in this region, where there was no training data.
+            # The actual probability is assumed to be zero.
+            
+            probabilities += numpy.array(d) * bias_correct(regressor.predict(f))
+
+        x = sorted(zip(probabilities, h), reverse=True)
         winners = ' '.join(tuple( (y[1] for y in x[0:10]) ))
         writer.writerow((user_hash, winners))
 
