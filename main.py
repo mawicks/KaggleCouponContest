@@ -295,43 +295,88 @@ class SimpleDateFeatureSet:
     def map(self, user_history, coupon, date):
         return (date.isoweekday(),)
 
-class UserHistoryFeatureSet:
+class UserPurchaseHistoryFeatureSet:
     def names(self):
         return('number_of_genre_purchases',
                'number_of_capsule_purchases',
-               'days_since_genre',
-               'days_since_capsule',
-               'percent_from_genre',
-               'percent_from_capsule'
+               'days_since_purchase',
+               'days_since_genre_purchase',
+               'days_since_capsule_purchase',
+               'percent_from_genre_purchase',
+               'percent_from_capsule_purchase'
         )
 
     def map(self, user_history, coupon, date):
         genre_count = 0
         capsule_count = 0
-        days_since_capsule = days_since_genre = 1 << 31
+        days_since_purchase = days_since_capsule = days_since_genre = 1 << 31
         purchase_count = 0
 
         for p in user_history.purchase:
-            days = (date - p.I_DATE).days
+            # Consider only the past
             if p.I_DATE < date:
+                days = (date - p.I_DATE).days
+                days_since_purchase = min(days_since_purchase, days)
                 purchase_count += 1
-            
-            if (p.COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME and
-                p.I_DATE < date):
-                genre_count += 1
-                days_since_genre = min(days_since_genre, days)
                 
-            if (p.COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT and
-                p.I_DATE < date):
-                capsule_count += 1
-                days_since_capsule = min(days_since_capsule, days)
+                if p.COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME:
+                    genre_count += 1
+                    days_since_genre = min(days_since_genre, days)
+                
+                if p.COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT:
+                    capsule_count += 1
+                    days_since_capsule = min(days_since_capsule, days)
                 
         result = (float(genre_count),
                   float(capsule_count),
+                  float(days_since_purchase),
                   float(days_since_genre),
                   float(days_since_capsule),
                   float(genre_count) / purchase_count if purchase_count > 0 else 0,
                   float(capsule_count) / purchase_count if purchase_count > 0 else 0)
+
+        return result
+
+
+class UserVisitHistoryFeatureSet:
+    def names(self):
+        return('number_of_genre_visits',
+               'number_of_capsule_visits',
+               'days_since_visit',
+               'days_since_genre_visit',
+               'days_since_capsule_visit',
+               'percent_from_genre_visit',
+               'percent_from_capsule_visit'
+        )
+
+    def map(self, user_history, coupon, date):
+        genre_count = 0
+        capsule_count = 0
+        days_since_visit = days_since_capsule = days_since_genre = 1 << 31
+        visit_count = 0
+
+        for v in user_history.visit:
+            # Consider only the past
+            if v.I_DATE < date:
+                days = (date - v.I_DATE).days
+                days_since_visit = min(days_since_visit, days)
+                visit_count += 1
+                
+                if v.VIEW_COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME:
+                    genre_count += 1
+                    days_since_genre = min(days_since_genre, days)
+                
+                if v.VIEW_COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT:
+                    capsule_count += 1
+                    days_since_capsule = min(days_since_capsule, days)
+                
+        result = (float(genre_count),
+                  float(capsule_count),
+                  float(days_since_visit),
+                  float(days_since_genre),
+                  float(days_since_capsule),
+                  float(genre_count) / visit_count if visit_count > 0 else 0,
+                  float(capsule_count) / visit_count if visit_count > 0 else 0)
 
         return result
 
@@ -382,7 +427,8 @@ class JointFeatureSet:
 # dump(user_history)
 
 feature_extractors = (
-    UserHistoryFeatureSet(),
+    UserPurchaseHistoryFeatureSet(),
+    UserVisitHistoryFeatureSet(),
     SimpleUserFeatureSet(),
     SimpleCouponFeatureSet(),
     JointFeatureSet(),
@@ -482,7 +528,7 @@ with open("submission.csv", "w") as outputfile:
             # there were no examples of purchases where displayed==0 in the training data.
             # The predictor will return incorrect results in this region, where there was no training data.
             # The actual probability is assumed to be zero.
-            
+
             probabilities += numpy.array(d) * bias_correct(regressor.predict(f))
 
         x = sorted(zip(probabilities, h), reverse=True)
