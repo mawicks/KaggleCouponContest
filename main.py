@@ -10,6 +10,7 @@ import numpy
 import random
 import sklearn
 import sklearn.ensemble
+import sys
 
 # Parameters
 random_state = random.Random(123456)
@@ -287,6 +288,53 @@ class RandomFeatureSet:
     def map (self, user_history, coupon, date):
         return (random_state.randrange(2),)
 
+class SimpleDateFeatureSet:
+    def names(self):
+        return ('day_of_week',)
+
+    def map(self, user_history, coupon, date):
+        return (date.isoweekday(),)
+
+class UserHistoryFeatureSet:
+    def names(self):
+        return('number_of_genre_purchases',
+               'number_of_capsule_purchases',
+               'days_since_genre',
+               'days_since_capsule',
+               'percent_from_genre',
+               'percent_from_capsule'
+        )
+
+    def map(self, user_history, coupon, date):
+        genre_count = 0
+        capsule_count = 0
+        days_since_capsule = days_since_genre = 1 << 31
+        purchase_count = 0
+
+        for p in user_history.purchase:
+            days = (date - p.I_DATE).days
+            if p.I_DATE < date:
+                purchase_count += 1
+            
+            if (p.COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME and
+                p.I_DATE < date):
+                genre_count += 1
+                days_since_genre = min(days_since_genre, days)
+                
+            if (p.COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT and
+                p.I_DATE < date):
+                capsule_count += 1
+                days_since_capsule = min(days_since_capsule, days)
+                
+        result = (float(genre_count),
+                  float(capsule_count),
+                  float(days_since_genre),
+                  float(days_since_capsule),
+                  float(genre_count) / purchase_count if purchase_count > 0 else 0,
+                  float(capsule_count) / purchase_count if purchase_count > 0 else 0)
+
+        return result
+
 class SimpleUserFeatureSet:
     def names(self):
         return ('age', 'gender', 'prefecture', 'days_as_member')
@@ -333,7 +381,14 @@ class JointFeatureSet:
     
 # dump(user_history)
 
-feature_extractors = (SimpleUserFeatureSet(), SimpleCouponFeatureSet(), JointFeatureSet(), RandomFeatureSet())
+feature_extractors = (
+    UserHistoryFeatureSet(),
+    SimpleUserFeatureSet(),
+    SimpleCouponFeatureSet(),
+    JointFeatureSet(),
+    SimpleDateFeatureSet(),
+    RandomFeatureSet()
+)
 
 def features(user_history, coupon, date):
     return reduce (operator.add, (fe.map(user_history,
@@ -389,8 +444,11 @@ logger.info('Training...')
 regressor.fit(training_features, training_outcomes)
 training_score = regressor.score(training_features, training_outcomes)
 
-logger.info('{0:>24}: {1}'.format('importances', dict(zip(feature_names, regressor.feature_importances_))))
-logger.info('{0:>24}: {1}'.format('feature names', feature_names))
+logger.info('Importances:')
+for i,n in sorted(zip(regressor.feature_importances_, feature_names), reverse=True):
+    logger.info('{0:>30}: {1:6.4f}'.format(n, i))
+    
+logger.info('Performance:')
 logger.info('{0:>24}: {1:6.4f}/{2:6.4f}'.format('training/oob r-squared', training_score, regressor.oob_score_))
 logger.info('{0:>24}: {1:7.5f}/{2:7.5f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
 logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(training_outcomes, regressor.oob_prediction_)))
