@@ -3,6 +3,7 @@ import collections
 import csv
 import datetime
 from functools import reduce
+import itertools
 import logging
 import operator
 import math
@@ -20,6 +21,7 @@ classifier_random_state.seed(12345)
 
 N = 20000
 n_estimators = 200
+min_samples_leaf = 1+ int(0.0005*N)
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
@@ -188,7 +190,8 @@ visit = tuple( v._replace(USER_ID_hash=user[v.USER_ID_hash],
                            PURCHASEID_hash=purchase.get(v.PURCHASEID_hash, None))
                 for v in read_file('coupon_visit_train.csv', 'Visit') )
 
-area = read_file('coupon_area_train.csv', 'Area')
+train_area = read_file('coupon_area_train.csv', 'Area')
+test_area = read_file('coupon_area_test.csv', 'Area')
 
 
 prefecture_set = set()
@@ -229,9 +232,9 @@ for v in visit:
     visit_by_user.setdefault(v.USER_ID_hash.USER_ID_hash, []).append(v)
 
 # Area
-area_by_coupon = collections.OrderedDict()
-for a in area:
-    area_by_coupon.setdefault(a.COUPON_ID_hash, []).append(a)
+small_area_by_coupon = collections.OrderedDict()
+for a in itertools.chain(train_area, test_area):
+    small_area_by_coupon.setdefault(a.COUPON_ID_hash, set()).add(a.SMALL_AREA_NAME)
     prefecture_set.add(a.PREF_NAME)
     small_area_name_set.add(a.SMALL_AREA_NAME)
 
@@ -297,27 +300,44 @@ class SimpleDateFeatureSet:
 
 class UserPurchaseHistoryFeatureSet:
     def names(self):
-        return('number_of_genre_purchases',
-               'number_of_capsule_purchases',
-               'days_since_purchase',
-               'days_since_genre_purchase',
-               'days_since_capsule_purchase',
-               'percent_from_genre_purchase',
-               'percent_from_capsule_purchase'
+        return(
+            'number_of_genre_purchases',
+            'number_of_capsule_purchases',
+            'days_since_purchase',
+            'days_since_genre_purchase',
+            'days_since_capsule_purchase',
+            'percent_from_genre_purchase',
+            'percent_from_capsule_purchase',
+            'centered_discount_price',
+            'centered_price_rate',
+            'relative_to_max_discount_price',
+            'relative_to_min_price_rate',
+            'in_previous_purchase_area',
         )
 
     def map(self, user_history, coupon, date):
         genre_count = 0
         capsule_count = 0
-        days_since_purchase = days_since_capsule = days_since_genre = 1 << 31
         purchase_count = 0
+        sum_discount_price = 0
+        sum_price_rate = 0
+        min_price_rate = 100
+        max_discount_price = 0
+        days_since_purchase = days_since_capsule = days_since_genre = 1 << 31
+        previous_purchase_area = set()
 
         for p in user_history.purchase:
             # Consider only the past
             if p.I_DATE < date:
                 days = (date - p.I_DATE).days
                 days_since_purchase = min(days_since_purchase, days)
+
+                min_price_rate = min(min_price_rate, p.COUPON_ID_hash.PRICE_RATE)
+                max_discount_price = max(max_discount_price, p.COUPON_ID_hash.PRICE_RATE)
+                
                 purchase_count += 1
+                sum_discount_price += p.COUPON_ID_hash.DISCOUNT_PRICE
+                sum_price_rate += p.COUPON_ID_hash.PRICE_RATE
                 
                 if p.COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME:
                     genre_count += 1
@@ -326,14 +346,23 @@ class UserPurchaseHistoryFeatureSet:
                 if p.COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
-                
-        result = (float(genre_count),
-                  float(capsule_count),
-                  float(days_since_purchase),
-                  float(days_since_genre),
-                  float(days_since_capsule),
-                  float(genre_count) / purchase_count if purchase_count > 0 else 0,
-                  float(capsule_count) / purchase_count if purchase_count > 0 else 0)
+
+                previous_purchase_area.add(p.SMALL_AREA_NAME)
+
+        result = (
+            float(genre_count),
+            float(capsule_count),
+            float(days_since_purchase),
+            float(days_since_genre),
+            float(days_since_capsule),
+            float(genre_count) / purchase_count if purchase_count > 0 else -999,
+            float(capsule_count) / purchase_count if purchase_count > 0 else -999,
+            coupon.DISCOUNT_PRICE - float(sum_discount_price)/ purchase_count if purchase_count > 0 else -999,
+            coupon.PRICE_RATE - float(sum_price_rate)/ purchase_count if purchase_count > 0 else -999,
+            coupon.DISCOUNT_PRICE - max_discount_price,
+            coupon.PRICE_RATE - min_price_rate,
+            len(small_area_by_coupon.get(coupon.COUPON_ID_hash, set()).intersection(previous_purchase_area))
+        )
 
         return result
 
@@ -399,23 +428,37 @@ class SimpleCouponFeatureSet:
                 'price_reduction',
                 'valid_period',
                 'days_on_display', 'display_days_left',
-                'days_until_valid', 'days_until_expiration')
+                'days_until_valid', 'days_until_expiration',
+                'usable_date_mon', 'usable_date_tue', 'usable_date_wed',
+                'usable_date_thu', 'usable_date_fri', 'usable_date_sat',
+                'usable_date_sun', 'usable_date_holiday', 'usable_date_before_holiday',
+                'usable_date_weekend', 'usable_date_sum',
+        )
 
     def map (self, user_history, coupon, date):
-        return (capsule_encoder.map(coupon.CAPSULE_TEXT),
-                genre_name_encoder.map(coupon.GENRE_NAME),
-                large_area_name_encoder.map(coupon.large_area_name),
-                prefecture_encoder.map(coupon.ken_name),
-                small_area_name_encoder.map(coupon.small_area_name),
-                coupon.PRICE_RATE,
-                coupon.CATALOG_PRICE,
-                coupon.DISCOUNT_PRICE,
-                coupon.CATALOG_PRICE-coupon.DISCOUNT_PRICE,
-                coupon.VALIDPERIOD,
-                (date - coupon.DISPFROM).days,
-                (coupon.DISPEND - date).days,
-                (coupon.VALIDFROM - date).days,
-                (coupon.VALIDEND - date).days)
+        return (
+            capsule_encoder.map(coupon.CAPSULE_TEXT),
+            genre_name_encoder.map(coupon.GENRE_NAME),
+            large_area_name_encoder.map(coupon.large_area_name),
+            prefecture_encoder.map(coupon.ken_name),
+            small_area_name_encoder.map(coupon.small_area_name),
+            coupon.PRICE_RATE,
+            coupon.CATALOG_PRICE,
+            coupon.DISCOUNT_PRICE,
+            coupon.CATALOG_PRICE-coupon.DISCOUNT_PRICE,
+            coupon.VALIDPERIOD,
+            (date - coupon.DISPFROM).days,
+            (coupon.DISPEND - date).days,
+            (coupon.VALIDFROM - date).days,
+            (coupon.VALIDEND - date).days,
+            coupon.USABLE_DATE_MON, coupon.USABLE_DATE_TUE, coupon.USABLE_DATE_WED,
+            coupon.USABLE_DATE_THU, coupon.USABLE_DATE_FRI, coupon.USABLE_DATE_SAT,
+            coupon.USABLE_DATE_SUN, coupon.USABLE_DATE_HOLIDAY, coupon.USABLE_DATE_BEFORE_HOLIDAY,
+            coupon.USABLE_DATE_SAT+coupon.USABLE_DATE_SUN,
+            ( coupon.USABLE_DATE_MON + coupon.USABLE_DATE_TUE + coupon.USABLE_DATE_WED +
+              coupon.USABLE_DATE_THU + coupon.USABLE_DATE_FRI + coupon.USABLE_DATE_SAT +
+              coupon.USABLE_DATE_SUN + coupon.USABLE_DATE_HOLIDAY + coupon.USABLE_DATE_BEFORE_HOLIDAY ),
+        )
 
 class JointFeatureSet:
     def names(self):
@@ -461,8 +504,9 @@ nonpurchase_sample = []
 
 logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
-nonpurchase_count = 0
-while nonpurchase_count < N//2:
+bias_correction = 0
+saw_a_one = False
+while not saw_a_one or nonpurchase_count < N//2:
     random_user_history = user_history_list[random_state.randrange(len(user_history_list))]
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     random_user = random_user_history.user
@@ -474,15 +518,22 @@ while nonpurchase_count < N//2:
         random_date = start_date + datetime.timedelta(days=random_state.randrange((end_date-start_date).days+1))
         result = purchase_by_user_coupon_date.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date), 0)
         if result == 0:
-            f = features(random_user_history, random_coupon, random_date)
-            training_features.append(f)
-            nonpurchase_count += 1
+            if nonpurchase_count < N//2:
+                f = features(random_user_history, random_coupon, random_date)
+                training_features.append(f)
+                nonpurchase_count += 1
+            if not saw_a_one:
+                bias_correction += 1
+        else:
+            saw_a_one = True
+
+logger.info('Bias correction: {0:,}'.format(bias_correction))
             
 training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
 
 regressor = sklearn.ensemble.RandomForestRegressor(random_state=classifier_random_state,
                                                    n_estimators=n_estimators,
-                                                   min_samples_leaf=75,
+                                                   min_samples_leaf=min_samples_leaf,
                                                    oob_score=True)
 
 logger.info('Training...')
@@ -501,7 +552,7 @@ logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(tr
 
 coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
 
-bias_correct = numpy.vectorize(lambda x: x / (x + 1e6*(1-x)))
+bias_correct = numpy.vectorize(lambda x: x / (x + bias_correction*(1-x)))
 
 logger.info('Scoring and writing output file.')
 with open("submission.csv", "w") as outputfile:
