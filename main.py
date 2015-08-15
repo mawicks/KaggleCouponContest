@@ -546,7 +546,7 @@ class CouponUsableDateFeatureSet:
 #            'usable_date_holiday',
 #            'usable_date_before_holiday',
 #            'usable_date_weekend',
-            'usable_date_weekday',
+            'usable_date_sun_and_holiday',
         )
 
     def map (self, user_history, coupon, date):
@@ -561,8 +561,7 @@ class CouponUsableDateFeatureSet:
 #            coupon.USABLE_DATE_HOLIDAY,
 #            coupon.USABLE_DATE_BEFORE_HOLIDAY,
 #            coupon.USABLE_DATE_SAT+coupon.USABLE_DATE_SUN,
-            ( coupon.USABLE_DATE_MON + coupon.USABLE_DATE_TUE + coupon.USABLE_DATE_WED +
-              coupon.USABLE_DATE_THU + coupon.USABLE_DATE_FRI ),
+            ( coupon.USABLE_DATE_SUN + coupon.USABLE_DATE_HOLIDAY + coupon.USABLE_DATE_BEFORE_HOLIDAY ),
         )
 
 class JointFeatureSet:
