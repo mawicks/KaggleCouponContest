@@ -357,7 +357,7 @@ class UserPurchaseHistoryFeatureSet:
                 if p.COUPON_ID_hash.large_area_name == coupon.large_area_name:
                     days_since_large_area_name = min(days_since_large_area_name, days)
                     
-                if p.COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                if p.COUPON_ID_hash.ken_name == coupon.ken_name:
                     days_since_ken_name = min(days_since_ken_name, days)
 
                 previous_purchase_area.add(p.SMALL_AREA_NAME)
@@ -426,7 +426,7 @@ class UserVisitHistoryFeatureSet:
                 if v.VIEW_COUPON_ID_hash.large_area_name == coupon.large_area_name:
                     days_since_large_area_name = min(days_since_large_area_name, days)
                     
-                if v.VIEW_COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                if v.VIEW_COUPON_ID_hash.ken_name == coupon.ken_name:
                     days_since_ken_name = min(days_since_ken_name, days)
                 
         result = (
