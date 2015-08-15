@@ -1,0 +1,57 @@
+==> user_list.csv <==
+USER_ID_hash		[KEY]
+REG_DATE		used in feature days_as_member; used for windowing
+SEX_ID			simple feature
+AGE			simple feature
+WITHDRAW_DATE		used for windowing
+PREF_NAME		simple feature; used in distnace (from coupon PREF_NAME)
+
+==> coupon_list_XXXX.csv <==
+COUPON_ID_hash		[KEY]
+CAPSULE_TEXT		simple feature
+GENRE_NAME		simple feature
+PRICE_RATE		simple feature
+CATALOG_PRICE		simple feature
+DISCOUNT_PRICE		simple feature
+DISPFROM		used in days_on_display
+DISPEND			used for display_days_left
+DISPPERIOD		simple feature
+VALIDFROM		used in days_until_valid
+VALIDEND		used in days_until_expiration
+VALIDPERIOD		simple feature
+USABLE_DATE_MON		simple feature
+USABLE_DATE_TUE		simple feature
+USABLE_DATE_WED		simple feature
+USABLE_DATE_THU		simple feature
+USABLE_DATE_FRI		simple feature
+USABLE_DATE_SAT		simple feature
+USABLE_DATE_SUN		simple feature
+USABLE_DATE_HOLIDAY	simple feature
+USABLE_DATE_BEFORE_HOLIDAY	simple feature
+large_area_name		simple feature; also days_since_large_area_xxxx
+ken_name		simple feature; also days_since_ken_xxxx
+small_area_name		simple feature; also days_since_small_area_xxxx
+
+==> coupon_area_XXXX.csv <==
+COUPON_ID_hash
+SMALL_AREA_NAME
+PREF_NAME
+
+==> coupon_visit_train.csv <==
+PURCHASE_FLG		IGNORED
+I_DATE			used in days_since_xxxx_visit
+PAGE_SERIAL		**** NOT USED ****
+REFERRER_hash 		**** NOT USED ****
+VIEW_COUPON_ID_hash	[FK]
+USER_ID_hash		[FK]
+SESSION_ID_hash
+PURCHASEID_hash		[FK]
+
+==> coupon_detail_train.csv <==
+COUPON_ID_hash		[FK]
+ITEM_COUNT		used in max_qty_xxxx_purchase
+I_DATE			used in days_since_xxxx_purchase
+SMALL_AREA_NAME		used in in_previous_purchase_area
+PURCHASEID_hash
+USER_ID_hash
+
