@@ -21,7 +21,7 @@ classifier_random_state.seed(12345)
 
 N = 20000
 n_estimators = 200
-min_samples_leaf = 1+ int(0.0005*N)
+min_samples_leaf = 1+ int(0.00025*N)
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
@@ -306,6 +306,9 @@ class UserPurchaseHistoryFeatureSet:
             'days_since_purchase',
             'days_since_genre_purchase',
             'days_since_capsule_purchase',
+            'days_since_small_area_purchase',
+            'days_since_large_area_purchase',
+            'days_since_ken_purchase',
             'percent_from_genre_purchase',
             'percent_from_capsule_purchase',
             'centered_discount_price',
@@ -324,6 +327,7 @@ class UserPurchaseHistoryFeatureSet:
         min_price_rate = 100
         max_discount_price = 0
         days_since_purchase = days_since_capsule = days_since_genre = 1 << 31
+        days_since_small_area_name = days_since_large_area_name = days_since_ken_name = 1 << 31
         previous_purchase_area = set()
 
         for p in user_history.purchase:
@@ -347,6 +351,15 @@ class UserPurchaseHistoryFeatureSet:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
 
+                if p.COUPON_ID_hash.small_area_name == coupon.small_area_name:
+                    days_since_small_area_name = min(days_since_small_area_name, days)
+
+                if p.COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                    days_since_large_area_name = min(days_since_large_area_name, days)
+                    
+                if p.COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                    days_since_ken_name = min(days_since_ken_name, days)
+
                 previous_purchase_area.add(p.SMALL_AREA_NAME)
 
         result = (
@@ -355,6 +368,9 @@ class UserPurchaseHistoryFeatureSet:
             float(days_since_purchase),
             float(days_since_genre),
             float(days_since_capsule),
+            float(days_since_small_area_name),
+            float(days_since_large_area_name),
+            float(days_since_ken_name),
             float(genre_count) / purchase_count if purchase_count > 0 else -999,
             float(capsule_count) / purchase_count if purchase_count > 0 else -999,
             coupon.DISCOUNT_PRICE - float(sum_discount_price)/ purchase_count if purchase_count > 0 else -999,
@@ -369,19 +385,24 @@ class UserPurchaseHistoryFeatureSet:
 
 class UserVisitHistoryFeatureSet:
     def names(self):
-        return('number_of_genre_visits',
-               'number_of_capsule_visits',
-               'days_since_visit',
-               'days_since_genre_visit',
-               'days_since_capsule_visit',
-               'percent_from_genre_visit',
-               'percent_from_capsule_visit'
+        return (
+            'number_of_genre_visits',
+            'number_of_capsule_visits',
+            'days_since_visit',
+            'days_since_genre_visit',
+            'days_since_small_area_visit',
+            'days_since_large_area_visit',
+            'days_since_ken_visit',
+            'days_since_capsule_visit',
+            'percent_from_genre_visit',
+            'percent_from_capsule_visit',
         )
 
     def map(self, user_history, coupon, date):
         genre_count = 0
         capsule_count = 0
         days_since_visit = days_since_capsule = days_since_genre = 1 << 31
+        days_since_small_area_name = days_since_large_area_name = days_since_ken_name = 1 << 31
         visit_count = 0
 
         for v in user_history.visit:
@@ -398,14 +419,28 @@ class UserVisitHistoryFeatureSet:
                 if v.VIEW_COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
+
+                if v.VIEW_COUPON_ID_hash.small_area_name == coupon.small_area_name:
+                    days_since_small_area_name = min(days_since_small_area_name, days)
+
+                if v.VIEW_COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                    days_since_large_area_name = min(days_since_large_area_name, days)
+                    
+                if v.VIEW_COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                    days_since_ken_name = min(days_since_ken_name, days)
                 
-        result = (float(genre_count),
-                  float(capsule_count),
-                  float(days_since_visit),
-                  float(days_since_genre),
-                  float(days_since_capsule),
-                  float(genre_count) / visit_count if visit_count > 0 else 0,
-                  float(capsule_count) / visit_count if visit_count > 0 else 0)
+        result = (
+            float(genre_count),
+            float(capsule_count),
+            float(days_since_visit),
+            float(days_since_genre),
+            float(days_since_capsule),
+            float(days_since_small_area_name),
+            float(days_since_large_area_name),
+            float(days_since_ken_name),
+            float(genre_count) / visit_count if visit_count > 0 else 0,
+            float(capsule_count) / visit_count if visit_count > 0 else 0,
+        )
 
         return result
 
