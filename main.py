@@ -14,10 +14,12 @@ import sklearn.ensemble
 import sys
 
 # Tunable parameters
-N = 20000
-n_estimators = 200
+N = 100000
+n_estimators = 1000
 min_samples_leaf = 1 + int(0.00025*N)
 min_samples_leaf = 5
+max_features = 9
+n_jobs=-1
 
 # Important constants
 sample_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
@@ -38,8 +40,19 @@ classifier_random_state.seed(12345)
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
 logging.basicConfig(format=FORMAT)
-
 logger.setLevel(logging.DEBUG)
+
+logger.info('Parameters: '
+            'N: {0}, '
+            'n_estimators: {1}, '
+            'min_samples_leaf: {2}, '
+            'max_features: {3}, '
+            'n_jobs: {4}'.format(N,
+                                 n_estimators,
+                                 min_samples_leaf,
+                                 max_features,
+                                 n_jobs
+                             ))
 
 def dump(d):
     for k, v in d.items():
@@ -318,6 +331,13 @@ class RandomFeatureSet:
     def map (self, user_history, coupon, date):
         return (random_state.randrange(2),)
 
+class ExperimentalFeatureSet:
+    def names(self):
+        return ('week_index',)
+    
+    def map (self, user_history, coupon, date):
+        return (week_index(date),)
+
 def days_accessible(user, coupon, week_start_date):
     """Returns the number of days the coupon was accessible to the user during
     the week beginning on week_start_date"""
@@ -360,10 +380,10 @@ class UserPurchaseHistoryFeatureSet:
 
             'in_previous_purchase_area',
 
-#            'max_qty_genre',
-#            'max_qty_capsule',
+            'max_qty_genre',
+            'max_qty_capsule',
 
-#            'max_qty_ken',
+            'max_qty_ken',
             'max_qty_large_area',
             'max_qty_small_area',
         )
@@ -442,10 +462,10 @@ class UserPurchaseHistoryFeatureSet:
 
             len(small_area_by_coupon.get(coupon.COUPON_ID_hash, set()).intersection(previous_purchase_area)),
 
-#            max_qty_genre,
-#            max_qty_capsule,
+            max_qty_genre,
+            max_qty_capsule,
 
-#            max_qty_ken,
+            max_qty_ken,
             max_qty_large_area,
             max_qty_small_area,
         )
@@ -530,7 +550,11 @@ class UserVisitHistoryFeatureSet:
 
 class SimpleUserFeatureSet:
     def names(self):
-        return ('age', 'gender', 'prefecture', 'days_as_member')
+        return (
+            'age',
+            'gender',
+            'prefecture',
+            'days_as_member')
 
     def map (self, user_history, coupon, date):
         user = user_history.user
@@ -575,30 +599,30 @@ class CouponUsableDateFeatureSet:
     def names(self):
         return (
             'usable_date_mon',
-#            'usable_date_tue',
+            'usable_date_tue',
             'usable_date_wed',
             'usable_date_thu',
-#            'usable_date_fri',
+            'usable_date_fri',
             'usable_date_sat',
-#            'usable_date_sun',
-#            'usable_date_holiday',
-#            'usable_date_before_holiday',
-#            'usable_date_weekend',
+            'usable_date_sun',
+            'usable_date_holiday',
+            'usable_date_before_holiday',
+            'usable_date_weekend',
             'usable_date_sun_and_holiday',
         )
 
     def map (self, user_history, coupon, date):
         return (
             coupon.USABLE_DATE_MON,
-#            coupon.USABLE_DATE_TUE,
+            coupon.USABLE_DATE_TUE,
             coupon.USABLE_DATE_WED,
             coupon.USABLE_DATE_THU,
-#            coupon.USABLE_DATE_FRI,
+            coupon.USABLE_DATE_FRI,
             coupon.USABLE_DATE_SAT,
-#            coupon.USABLE_DATE_SUN,
-#            coupon.USABLE_DATE_HOLIDAY,
-#            coupon.USABLE_DATE_BEFORE_HOLIDAY,
-#            coupon.USABLE_DATE_SAT+coupon.USABLE_DATE_SUN,
+            coupon.USABLE_DATE_SUN,
+            coupon.USABLE_DATE_HOLIDAY,
+            coupon.USABLE_DATE_BEFORE_HOLIDAY,
+            coupon.USABLE_DATE_SAT+coupon.USABLE_DATE_SUN,
             ( coupon.USABLE_DATE_SUN + coupon.USABLE_DATE_HOLIDAY + coupon.USABLE_DATE_BEFORE_HOLIDAY ),
         )
 
@@ -612,6 +636,7 @@ class JointFeatureSet:
 # dump(user_history)
 
 feature_extractors = (
+    ExperimentalFeatureSet(),
     AvailabilityFeatureSet(),
     UserPurchaseHistoryFeatureSet(),
     UserVisitHistoryFeatureSet(),
@@ -622,14 +647,18 @@ feature_extractors = (
     RandomFeatureSet()
 )
 
+feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
+
 def features(user_history, coupon, date):
     start_of_week_date = start_of_week(date)
-    return reduce (operator.add,
-                   (fe.map(user_history,
-                           coupon,
-                           start_of_week_date) for fe in feature_extractors))
+    x = reduce (operator.add,
+                (fe.map(user_history,
+                        coupon,
+                        start_of_week_date) for fe in feature_extractors))
+    if len(x) != len(feature_names):
+        logger.error('len(features_names) is {0} but len of feature vector is {1}'.format(len(feature_names), len(x)))
 
-feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
+    return x
 
 # Resample the probability space to get failed cases
 # The space is assumed to be (user, coupon, date) tuples
@@ -671,8 +700,11 @@ training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
 regressor = sklearn.ensemble.RandomForestRegressor(random_state=classifier_random_state,
                                                    n_estimators=n_estimators,
                                                    min_samples_leaf=min_samples_leaf,
+                                                   max_features=max_features,
+                                                   n_jobs=n_jobs,
                                                    oob_score=True)
 
+logger.info('{0} features'.format(len(feature_names)))
 logger.info('Training...')
 
 regressor.fit(training_features, training_outcomes)
