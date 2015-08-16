@@ -13,16 +13,27 @@ import sklearn
 import sklearn.ensemble
 import sys
 
-# Parameters
+# Tunable parameters
+N = 20000
+n_estimators = 200
+min_samples_leaf = 1 + int(0.00025*N)
+min_samples_leaf = 5
+
+# Important constants
+sample_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
+
+def week_index(date):
+    return int((date - sample_start_date).days / 7)
+
+def start_of_week(date):
+    return sample_start_date + week_index(date)*datetime.timedelta(days=7)
+
+# Random number seeds
 random_state = random.Random(123456)
 random_state.seed(12345)
 classifier_random_state = numpy.random.RandomState(seed=987654)
 classifier_random_state.seed(12345)
 
-N = 20000
-n_estimators = 200
-min_samples_leaf = 1+ int(0.00025*N)
-min_samples_leaf = 5
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
@@ -47,7 +58,7 @@ def date_mapper_max(d):
         except:
             timestamp = datetime.datetime.strptime(d, '%Y-%m-%d')
                         
-    return timestamp.date()
+    return timestamp
 
 def date_mapper_min(d):
     if d == 'NA':
@@ -58,7 +69,7 @@ def date_mapper_min(d):
         except:
             timestamp = datetime.datetime.strptime(d, '%Y-%m-%d')
 
-    return timestamp.date()
+    return timestamp
 
 def int_mapper(d):
     if d == 'NA':
@@ -209,23 +220,39 @@ logger.info('Scanning data...')
 first_purchase_date = min((p.I_DATE for p in purchase.values()))
 last_purchase_date = max((p.I_DATE for p in purchase.values()))
 
-def is_displayable(user, coupon, date):
+def range_violation(user, coupon, date):
     start_date = max(user.REG_DATE, coupon.DISPFROM)
     end_date = min(user.WITHDRAW_DATE, coupon.DISPEND)
-    return 1 if date >= start_date and date <= end_date else 0
+    
+    if date > end_date:
+        return (1, date - end_date)
+    
+    if date < start_date:
+        return (-1, start_date-date)
+    
+    return None
 
 logger.info('First/last purchase dates: {0}/{1}'.format(first_purchase_date, last_purchase_date))
 
 # Purchase
 purchase_by_user = collections.OrderedDict()
-purchase_by_user_coupon_date = collections.OrderedDict()
+purchase_by_user_coupon_week = collections.OrderedDict()
 for p in purchase.values():
     purchase_by_user.setdefault(p.USER_ID_hash.USER_ID_hash, []).append(p)
-    purchase_by_user_coupon_date[(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, p.I_DATE)] = 1
+    purchase_by_user_coupon_week[(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, week_index(p.I_DATE))] = 1
 
     # Verify the assumption that purchases do not occur outside the ad display window or when the user is not registered.
-    if not is_displayable(user[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE):
-        logger.warn('Sale w/o display?  \n\tuser:{0}, \n\tcoupon:{1}, \n\tdate:{2}'.format(p.USER_ID_hash, p.COUPON_ID_hash, p.I_DATE))
+    rv = range_violation(user[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE)
+    if rv:
+        logger.warning('*** Sale w/o display: '
+                       '{0} days, {1} hours, {2} minutes, {3} seconds {4}'.format(rv[1].days,
+                                                                                  rv[1].seconds//3600,
+                                                                                  (rv[1].seconds % 3600) // 60,
+                                                                                  rv[1].seconds % 60,
+                                                                                  'after close' if rv[0]>0 else 'before open'))
+        logger.warning('\tpurchase date: {0}'.format(p.I_DATE))
+        logger.warning('\tuser:  {0} reg date range: {1} to {2}'.format(p.USER_ID_hash.USER_ID_hash, p.USER_ID_hash.REG_DATE, p.USER_ID_hash.WITHDRAW_DATE))
+        logger.warning('\tcoupon:  {0} disp date range: {1} to {2}'.format(p.COUPON_ID_hash.COUPON_ID_hash, p.COUPON_ID_hash.DISPFROM, p.COUPON_ID_hash.DISPEND))
 
 # Visit
 visit_by_user = collections.OrderedDict()
@@ -255,7 +282,8 @@ for h,u in user.items():
     prefecture_set.add(u.PREF_NAME)
 
 def log_set(logger, s, name):
-    logger.info('{0} ({1}): {2}'.format(name, len(s), ', '.join(sorted(map(str, s)))))
+#    logger.info('{0} ({1}): {2}'.format(name, len(s), ', '.join(sorted(map(str, s)))))
+    logger.info('{0}: {1} values'.format(name, len(s)))
 
 log_set(logger, prefecture_set, 'Prefecture names')
 log_set(logger, large_area_name_set, 'Large area names')
@@ -269,8 +297,6 @@ class CategoryEncoder:
         enumerated = tuple(enumerate(categories))
         self.mapping = dict((c,i) for i,c in enumerated)
         self.unmapping = tuple(zip(*enumerated))[1]
-        print(self.mapping)
-        print(self.unmapping)
 
     def map(self, category):
         return self.mapping[category]
@@ -292,12 +318,22 @@ class RandomFeatureSet:
     def map (self, user_history, coupon, date):
         return (random_state.randrange(2),)
 
-class SimpleDateFeatureSet:
-    def names(self):
-        return ('day_of_week',)
+def days_accessible(user, coupon, week_start_date):
+    """Returns the number of days the coupon was accessible to the user during
+    the week beginning on week_start_date"""
 
-    def map(self, user_history, coupon, date):
-        return (date.isoweekday(),)
+    start = max(week_start_date, user.REG_DATE, coupon.DISPFROM)
+    end = min(week_start_date+datetime.timedelta(days=7), user.WITHDRAW_DATE, coupon.DISPEND)
+    
+    interval = (end-start).total_seconds()/86400.0
+    return interval if interval > 0 else 0
+
+class AvailabilityFeatureSet:
+    def names(self):
+        return ('days_accessible_by_user',)
+
+    def map (self, user_history, coupon, date):
+        return (days_accessible(user_history.user, coupon, date),)
 
 class UserPurchaseHistoryFeatureSet:
     def names(self):
@@ -327,7 +363,7 @@ class UserPurchaseHistoryFeatureSet:
 #            'max_qty_genre',
 #            'max_qty_capsule',
 
-            'max_qty_ken',
+#            'max_qty_ken',
             'max_qty_large_area',
             'max_qty_small_area',
         )
@@ -409,7 +445,7 @@ class UserPurchaseHistoryFeatureSet:
 #            max_qty_genre,
 #            max_qty_capsule,
 
-            max_qty_ken,
+#            max_qty_ken,
             max_qty_large_area,
             max_qty_small_area,
         )
@@ -431,7 +467,7 @@ class UserVisitHistoryFeatureSet:
             'days_since_large_area_visit',
             'days_since_ken_visit',
 
-            'days_since_coupon_visit',
+#            'days_since_coupon_visit',
 
             'percent_from_genre_visit',
             'percent_from_capsule_visit',
@@ -484,7 +520,7 @@ class UserVisitHistoryFeatureSet:
             float(days_since_large_area_name),
             float(days_since_ken_name),
 
-            days_since_coupon,
+#            days_since_coupon,
 
             float(genre_count) / visit_count if visit_count > 0 else 0,
             float(capsule_count) / visit_count if visit_count > 0 else 0,
@@ -511,8 +547,10 @@ class SimpleCouponFeatureSet:
                 'price_rate', 'catalog_price', 'discount_price',
                 'price_reduction',
                 'valid_period',
-                'days_on_display', 'display_days_left',
-                'days_until_valid', 'days_until_expiration',
+                'days_on_display',
+                'display_days_left',
+                'days_until_valid',
+                'days_until_expiration',
         )
 
     def map (self, user_history, coupon, date):
@@ -537,7 +575,7 @@ class CouponUsableDateFeatureSet:
     def names(self):
         return (
             'usable_date_mon',
-            'usable_date_tue',
+#            'usable_date_tue',
             'usable_date_wed',
             'usable_date_thu',
 #            'usable_date_fri',
@@ -552,7 +590,7 @@ class CouponUsableDateFeatureSet:
     def map (self, user_history, coupon, date):
         return (
             coupon.USABLE_DATE_MON,
-            coupon.USABLE_DATE_TUE,
+#            coupon.USABLE_DATE_TUE,
             coupon.USABLE_DATE_WED,
             coupon.USABLE_DATE_THU,
 #            coupon.USABLE_DATE_FRI,
@@ -574,20 +612,22 @@ class JointFeatureSet:
 # dump(user_history)
 
 feature_extractors = (
+    AvailabilityFeatureSet(),
     UserPurchaseHistoryFeatureSet(),
     UserVisitHistoryFeatureSet(),
     SimpleUserFeatureSet(),
     SimpleCouponFeatureSet(),
     CouponUsableDateFeatureSet(),
     JointFeatureSet(),
-    SimpleDateFeatureSet(),
     RandomFeatureSet()
 )
 
 def features(user_history, coupon, date):
-    return reduce (operator.add, (fe.map(user_history,
-                                         coupon,
-                                         date) for fe in feature_extractors))
+    start_of_week_date = start_of_week(date)
+    return reduce (operator.add,
+                   (fe.map(user_history,
+                           coupon,
+                           start_of_week_date) for fe in feature_extractors))
 
 feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 
@@ -602,37 +642,29 @@ purchase_sample = random_state.sample(tuple(purchase.values()), N//2)
 
 training_features = []
 for p in purchase_sample:
-    f = features(user_history[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE)
+    f = features(user_history[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, start_of_week(p.I_DATE))
     training_features.append(f)
 
 nonpurchase_sample = []
 
 logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
-bias_correction = 0
 saw_a_one = False
-while not saw_a_one or nonpurchase_count < N//2:
+
+while nonpurchase_count < N//2:
     random_user_history = user_history_list[random_state.randrange(len(user_history_list))]
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     random_user = random_user_history.user
 
-    start_date = max(first_purchase_date, random_user.REG_DATE, random_coupon.DISPFROM)
-    end_date = min(last_purchase_date, random_user.WITHDRAW_DATE, random_coupon.DISPEND)
+    random_week_index = random.randrange(51) # Only 51 weeks in training data; 52nd week is test set.
+    random_week_start = sample_start_date + datetime.timedelta(days=7*random_week_index)
 
-    if start_date <= end_date:
-        random_date = start_date + datetime.timedelta(days=random_state.randrange((end_date-start_date).days+1))
-        result = purchase_by_user_coupon_date.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_date), 0)
+    if days_accessible(random_user, random_coupon, random_week_start) > 0:
+        result = purchase_by_user_coupon_week.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_week_index), 0)
         if result == 0:
-            if nonpurchase_count < N//2:
-                f = features(random_user_history, random_coupon, random_date)
-                training_features.append(f)
-                nonpurchase_count += 1
-            if not saw_a_one:
-                bias_correction += 1
-        else:
-            saw_a_one = True
-
-logger.info('Bias correction: {0:,}'.format(bias_correction))
+            f = features(random_user_history, random_coupon, random_week_start)
+            training_features.append(f)
+            nonpurchase_count += 1
 
 training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
 
@@ -655,40 +687,33 @@ logger.info('{0:>24}: {1:6.4f}/{2:6.4f}'.format('training/oob r-squared', traini
 logger.info('{0:>24}: {1:7.5f}/{2:7.5f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
 logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(training_outcomes, regressor.oob_prediction_)))
 
-coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
-
-bias_correct = numpy.vectorize(lambda x: x / (x + bias_correction*(1-x)))
 
 logger.info('Scoring and writing output file.')
+coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
+
 with open("submission.csv", "w") as outputfile:
     writer = csv.writer(outputfile)
     writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
 
-    first_test_date = datetime.date(year=2012, month=6, day=24)
+    test_week_start_date = datetime.datetime(year=2012, month=6, day=24)
+
     for user_hash in sorted(user_history.keys()):
         a_user_history = user_history[user_hash]
+        a_user = a_user_history.user
 
-        probabilities  = numpy.zeros(len(coupon_test))
-
-        for days in range(7):
-            a_date = first_test_date + datetime.timedelta(days=days)
-            d, f, h = zip(*tuple(( (is_displayable(a_user_history.user, coupon, a_date),
-                                    features(a_user_history, coupon, a_date),
-                                    coupon.COUPON_ID_hash)
-                                   for coupon in coupon_test.values() ) ))
+        feature_hash_pairs = tuple(( (features(a_user_history, coupon, test_week_start_date),
+                                      coupon.COUPON_ID_hash)
+                                     for coupon in coupon_test.values()
+                                     if days_accessible(a_user, coupon, test_week_start_date) > 0))
+        
+        if len(feature_hash_pairs) > 0:
+            f, h = zip(*feature_hash_pairs)
+            probabilities = regressor.predict(f)
+            p_and_h = sorted(zip(probabilities, h), reverse=True)
+        else:
+            p_and_h = ()
             
-            # It's okay to add probabilities here because they are small after bias correction.
-            # As the final probability, we want 1 - \prod (1-p_i), but this is approximately \sum p_i.
-            # Also, ignore returned probabilities when the ad isn't displayed by setting them to zero.
-            # Negative examples were sampled over a set where displayed==1 and
-            # there were no examples of purchases where displayed==0 in the training data.
-            # The predictor will return incorrect results in this region, where there was no training data.
-            # The actual probability is assumed to be zero.
-
-            probabilities += numpy.array(d) * bias_correct(regressor.predict(f))
-
-        x = sorted(zip(probabilities, h), reverse=True)
-        winners = ' '.join(tuple( (y[1] for y in x[0:10]) ))
+        winners = ' '.join((h for p,h in p_and_h[0:10] if p > 0))
         writer.writerow((user_hash, winners))
 
 logger.info('Finished.')
