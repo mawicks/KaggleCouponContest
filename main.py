@@ -342,10 +342,18 @@ for p in purchase.values():
         logger.warning('\tuser:  {0} reg date range: {1} to {2}'.format(p.USER_ID_hash.USER_ID_hash, p.USER_ID_hash.REG_DATE, p.USER_ID_hash.WITHDRAW_DATE))
         logger.warning('\tcoupon:  {0} disp date range: {1} to {2}'.format(p.COUPON_ID_hash.COUPON_ID_hash, p.COUPON_ID_hash.DISPFROM, p.COUPON_ID_hash.DISPEND))
 
+# Sort purchase lists
+for purchase_list in purchase_by_user.values():
+    purchase_list.sort(key=operator.attrgetter('I_DATE'), reverse=True)
+
 # Visit
 visit_by_user = collections.OrderedDict()
 for v in visit:
     visit_by_user.setdefault(v.USER_ID_hash.USER_ID_hash, []).append(v)
+
+# Sort visit lists    
+for visit_list in visit_by_user.values():
+    visit_list.sort(key=operator.attrgetter('I_DATE'), reverse=True)
 
 # Area
 small_area_by_coupon = collections.OrderedDict()
@@ -365,9 +373,62 @@ for h,c in coupon.items():
 # User
 user_history = collections.OrderedDict()
 UserHistory = collections.namedtuple('UserHistory', ['user', 'visit', 'purchase'])
+
+class NBAccumulator:
+    """Naive Base accumulator"""
+    def __init__ (self, field):
+        self.field = field
+        self.getter = operator.attrgetter(field)
+        self.count_by_purchase_field_value = {}
+        self.count_by_purchase_field_value_and_previous_field_value = {}
+
+    def add (self, purchase_list):
+        history_set = set()
+        for purchase in purchase_list:
+            field_value = self.getter(purchase.COUPON_ID_hash)
+            self.count_by_purchase_field_value[field_value] = self.count_by_purchase_field_value.get(field_value, 1) + 1
+            
+            for historic_field_value in history_set:
+                t = (field_value, historic_field_value)
+                self.count_by_purchase_field_value_and_previous_field_value[t] = self.count_by_purchase_field_value_and_previous_field_value.get(t, 1) + 1
+                
+            history_set.add(field_value)
+
+    def dump (self, field_values):
+        print ('\nDump of {0}'.format(self.field))
+        field_values = tuple(field_values)
+
+        print('value\n\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
+        for fv in field_values:
+            print ('{0:>10}:\n\t{1:>10} {2}'.format(
+                fv,
+                self.count_by_purchase_field_value.get(fv, 1),
+                ' '.join(map('{0:>10}'.format, [self.count_by_purchase_field_value_and_previous_field_value.get((fv,pv), 1) for pv in field_values]))
+            ))
+
+accumulators = (
+    NBAccumulator('small_area_name'),
+    NBAccumulator('large_area_name'),
+    NBAccumulator('large_area_name'),
+    NBAccumulator('CAPSULE_TEXT'),
+    NBAccumulator('GENRE_NAME'),
+)
+
+logger.info('Building user history list and accumulating purchase stats')
+
 for h,u in user.items():
-    user_history[h] = UserHistory(user=u, visit=visit_by_user.get(h, []), purchase=purchase_by_user.get(h, []))
+    visit_history = visit_by_user.get(h, [])
+    purchase_history = purchase_by_user.get(h, [])
+
+    user_history[h] = UserHistory(user=u, visit=visit_history, purchase=purchase_history)
+    
+    for a in accumulators:
+        a.add(purchase_history)
+    
     prefecture_set.add(u.PREF_NAME)
+
+accumulators[0].dump(list(small_area_name_set)[0:10])
+accumulators[4].dump(genre_name_set)
 
 def log_set(logger, s, name):
 #    logger.info('{0} ({1}): {2}'.format(name, len(s), ', '.join(sorted(map(str, s)))))
