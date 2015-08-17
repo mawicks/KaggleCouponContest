@@ -726,30 +726,30 @@ class SimpleCouponFeatureSet:
 class CouponUsableDateFeatureSet:
     def names(self):
         return (
-            'usable_date_mon',
-            'usable_date_tue',
-            'usable_date_wed',
-            'usable_date_thu',
-            'usable_date_fri',
-            'usable_date_sat',
-            'usable_date_sun',
-            'usable_date_holiday',
-            'usable_date_before_holiday',
+#            'usable_date_mon',
+#            'usable_date_tue',
+#            'usable_date_wed',
+#            'usable_date_thu',
+#            'usable_date_fri',
+#            'usable_date_sat',
+#            'usable_date_sun',
+#            'usable_date_holiday',
+#           'usable_date_before_holiday',
             'usable_date_weekend',
             'usable_date_sun_and_holiday',
         )
 
     def map (self, user_history, coupon, date):
         return (
-            coupon.USABLE_DATE_MON,
-            coupon.USABLE_DATE_TUE,
-            coupon.USABLE_DATE_WED,
-            coupon.USABLE_DATE_THU,
-            coupon.USABLE_DATE_FRI,
-            coupon.USABLE_DATE_SAT,
-            coupon.USABLE_DATE_SUN,
-            coupon.USABLE_DATE_HOLIDAY,
-            coupon.USABLE_DATE_BEFORE_HOLIDAY,
+#            coupon.USABLE_DATE_MON,
+#            coupon.USABLE_DATE_TUE,
+#            coupon.USABLE_DATE_WED,
+#            coupon.USABLE_DATE_THU,
+#            coupon.USABLE_DATE_FRI,
+#            coupon.USABLE_DATE_SAT,
+#            coupon.USABLE_DATE_SUN,
+#            coupon.USABLE_DATE_HOLIDAY,
+#            coupon.USABLE_DATE_BEFORE_HOLIDAY,
             coupon.USABLE_DATE_SAT+coupon.USABLE_DATE_SUN,
             ( coupon.USABLE_DATE_SUN + coupon.USABLE_DATE_HOLIDAY + coupon.USABLE_DATE_BEFORE_HOLIDAY ),
         )
