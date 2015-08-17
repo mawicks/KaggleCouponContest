@@ -11,31 +11,106 @@ import numpy
 import random
 import sklearn
 import sklearn.ensemble
+import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-N = 100000
-n_estimators = 1000
+N = 180000
+n_estimators = 4000
 min_samples_leaf = 1 + int(0.00025*N)
 min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
+oob_score=False
+
+# Random number seeds
+random_state = random.Random(123456)
+random_state.seed(12345)
+
+classifier_random_state = numpy.random.RandomState(seed=987654)
+classifier_random_state.seed(12345)
+
 
 # Important constants
 sample_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
+
+class WrappedClassifier:
+    """Wrap the brain-dead classifier API to make it look more like a regressor."""
+    def __init__(self, classifier):
+        self.classifier = classifier
+
+    def fit(self, x, y):
+        self.classifier.fit(x, y)
+        #        self.oob_score_ = self.classifier.oob_score_
+
+        if hasattr(self.classifier, "oob_decision_function_"):
+            self.oob_prediction_ = self.classifier.oob_decision_function_[:,1].reshape(len(y))
+
+        if hasattr(self.classifier, "feature_importances_"):
+            self.feature_importances_ = self.classifier.feature_importances_
+
+    def predict(self, x):
+        return self.classifier.predict_proba(x)[:,1]
+
+    def score(self, x, y):
+        return self.classifier.score(x, y)
+
+regressors = ( 
+    ('RandomForestRegressor',
+     sklearn.ensemble.RandomForestRegressor(
+         random_state=classifier_random_state,
+         n_estimators=n_estimators,
+         min_samples_leaf=min_samples_leaf,
+         max_features=max_features,
+         n_jobs=n_jobs,
+         oob_score=oob_score
+     )),
+
+    ('RandomForestClassifer',
+     WrappedClassifier(sklearn.ensemble.RandomForestClassifier(
+         random_state=classifier_random_state,
+         n_estimators=n_estimators,
+         min_samples_leaf=min_samples_leaf,
+         max_features=max_features,
+         n_jobs=n_jobs,
+         criterion='entropy',
+         oob_score=oob_score
+     ))),
+
+    ('GradientBootingRegressor',
+     sklearn.ensemble.gradient_boosting.GradientBoostingRegressor(
+         random_state=classifier_random_state,
+         n_estimators=n_estimators,
+         min_samples_leaf=min_samples_leaf,
+         max_features=max_features)),
+    
+    ('GradientBoostingClassifier',
+     WrappedClassifier(sklearn.ensemble.gradient_boosting.GradientBoostingClassifier(
+         random_state=classifier_random_state,
+         n_estimators=n_estimators,
+         min_samples_leaf=min_samples_leaf,
+         max_features=max_features))),
+
+    ('AdaboostRegressor',
+     sklearn.ensemble.weight_boosting.AdaBoostRegressor(
+         n_estimators=n_estimators,
+     )),
+    
+    ('AdaboostClassifier',
+     WrappedClassifier(sklearn.ensemble.weight_boosting.AdaBoostClassifier(
+         n_estimators=n_estimators,
+     ))),
+
+)
+
+# For now, don't use boosting methods
+regressors = regressors[1:2]
 
 def week_index(date):
     return int((date - sample_start_date).days / 7)
 
 def start_of_week(date):
     return sample_start_date + week_index(date)*datetime.timedelta(days=7)
-
-# Random number seeds
-random_state = random.Random(123456)
-random_state.seed(12345)
-classifier_random_state = numpy.random.RandomState(seed=987654)
-classifier_random_state.seed(12345)
-
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
@@ -358,16 +433,23 @@ class AvailabilityFeatureSet:
 class UserPurchaseHistoryFeatureSet:
     def names(self):
         return(
+            'number_of_purchases',
             'number_of_genre_purchases',
             'number_of_capsule_purchases',
 
             'days_since_purchase',
+            'days_since_2nd_purchase',
+            
             'days_since_genre_purchase',
             'days_since_capsule_purchase',
 
             'days_since_small_area_purchase',
             'days_since_large_area_purchase',
             'days_since_ken_purchase',
+
+            'recency_small_area_purchase',
+            'recency_large_area_purchase',
+            'recency_ken_purchase',
 
             'percent_from_genre_purchase',
             'percent_from_capsule_purchase',
@@ -389,15 +471,19 @@ class UserPurchaseHistoryFeatureSet:
         )
 
     def map(self, user_history, coupon, date):
-        genre_count = 0
-        capsule_count = 0
-        purchase_count = 0
+        purchase_count = genre_count = capsule_count = 0
+
         sum_discount_price = 0
         sum_price_rate = 0
+
         min_price_rate = 100
         max_discount_price = 0
-        days_since_purchase = days_since_capsule = days_since_genre = 1 << 31
+
+        second_last_purchase = last_purchase = datetime.datetime.min
+        
+        days_since_capsule = days_since_genre = 1 << 31
         days_since_small_area_name = days_since_large_area_name = days_since_ken_name = 1 << 31
+        
         max_qty_genre = max_qty_capsule = 0
         max_qty_ken = max_qty_large_area = max_qty_small_area = 0
         previous_purchase_area = set()
@@ -405,8 +491,9 @@ class UserPurchaseHistoryFeatureSet:
         for p in user_history.purchase:
             # Consider only the past
             if p.I_DATE < date:
-                days = (date - p.I_DATE).days
-                days_since_purchase = min(days_since_purchase, days)
+                second_last_purchase = last_purchase
+                last_purchase = p.I_DATE
+                days = (date - last_purchase).days
 
                 min_price_rate = min(min_price_rate, p.COUPON_ID_hash.PRICE_RATE)
                 max_discount_price = max(max_discount_price, p.COUPON_ID_hash.PRICE_RATE)
@@ -439,17 +526,26 @@ class UserPurchaseHistoryFeatureSet:
 
                 previous_purchase_area.add(p.SMALL_AREA_NAME)
 
+        days_since_purchase = (date - last_purchase).days
+
         result = (
-            float(genre_count),
-            float(capsule_count),
+            purchase_count,
+            genre_count,
+            capsule_count,
 
-            float(days_since_purchase),
-            float(days_since_genre),
-            float(days_since_capsule),
+            days_since_purchase,
+            (date - second_last_purchase).days,
+            
+            days_since_genre,
+            days_since_capsule,
+            
+            days_since_small_area_name,
+            days_since_large_area_name,
+            days_since_ken_name,
 
-            float(days_since_small_area_name),
-            float(days_since_large_area_name),
-            float(days_since_ken_name),
+            days_since_purchase - days_since_small_area_name,
+            days_since_purchase - days_since_large_area_name,
+            days_since_purchase - days_since_ken_name,
 
             float(genre_count) / purchase_count if purchase_count > 0 else -999,
             float(capsule_count) / purchase_count if purchase_count > 0 else -999,
@@ -476,6 +572,7 @@ class UserPurchaseHistoryFeatureSet:
 class UserVisitHistoryFeatureSet:
     def names(self):
         return (
+            'number_of_visits',
             'number_of_genre_visits',
             'number_of_capsule_visits',
 
@@ -487,10 +584,17 @@ class UserVisitHistoryFeatureSet:
             'days_since_large_area_visit',
             'days_since_ken_visit',
 
+            'recency_small_area_visit',
+            'recency_large_area_visit',
+            'recency_ken_visit',
+            
 #            'days_since_coupon_visit',
 
             'percent_from_genre_visit',
             'percent_from_capsule_visit',
+
+            'peak_hour',
+            'peak_dow',
         )
 
     def map(self, user_history, coupon, date):
@@ -500,12 +604,24 @@ class UserVisitHistoryFeatureSet:
         days_since_small_area_name = days_since_large_area_name = days_since_ken_name = 1 << 31
         visit_count = 0
 
+        peak_dow = peak_hour = -1
+        peak_dow_count = peak_hour_count = 0
+        
+        hour_count = {}
+        dow_count = {}
+        
         for v in user_history.visit:
             # Consider only the past
             if v.I_DATE < date:
                 days = (date - v.I_DATE).days
                 days_since_visit = min(days_since_visit, days)
                 visit_count += 1
+
+                hour = v.I_DATE.hour
+                hour_count[hour] = hour_count.get(hour, 0) + 1
+
+                dow = v.I_DATE.weekday()
+                dow_count[dow] = dow_count.get(dow, 0) + 1
 
                 if v.VIEW_COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME:
                     genre_count += 1
@@ -527,25 +643,37 @@ class UserVisitHistoryFeatureSet:
                 if v.VIEW_COUPON_ID_hash.COUPON_ID_hash == coupon.COUPON_ID_hash:
                     days_since_coupon = min(days_since_coupon, days)
 
+        if len(hour_count) > 0:
+            peak_hour_count, peak_hour = sorted(((c,h) for (h,c) in hour_count.items()), reverse=True)[0]
+
+        if len(dow_count) > 0:
+            peak_dow_count, peak_dow = sorted(((c,d) for (d,c) in dow_count.items()), reverse=True)[0]
 
         result = (
-            float(genre_count),
-            float(capsule_count),
+            visit_count,
+            genre_count,
+            capsule_count,
 
-            float(days_since_visit),
-            float(days_since_genre),
-            float(days_since_capsule),
+            days_since_visit,
+            days_since_genre,
+            days_since_capsule,
 
-            float(days_since_small_area_name),
-            float(days_since_large_area_name),
-            float(days_since_ken_name),
+            days_since_small_area_name,
+            days_since_large_area_name,
+            days_since_ken_name,
+
+            days_since_visit - days_since_small_area_name,
+            days_since_visit - days_since_large_area_name,
+            days_since_visit - days_since_ken_name,
 
 #            days_since_coupon,
 
             float(genre_count) / visit_count if visit_count > 0 else 0,
             float(capsule_count) / visit_count if visit_count > 0 else 0,
-        )
 
+            peak_hour,
+            peak_dow,
+        )
         return result
 
 class SimpleUserFeatureSet:
@@ -654,7 +782,7 @@ def features(user_history, coupon, date):
     x = reduce (operator.add,
                 (fe.map(user_history,
                         coupon,
-                        start_of_week_date) for fe in feature_extractors))
+                         start_of_week_date) for fe in feature_extractors))
     if len(x) != len(feature_names):
         logger.error('len(features_names) is {0} but len of feature vector is {1}'.format(len(feature_names), len(x)))
 
@@ -669,10 +797,10 @@ coupon_list = tuple(coupon.values())
 random_state.seed(123456)
 purchase_sample = random_state.sample(tuple(purchase.values()), N//2)
 
-training_features = []
+sample_features = []
 for p in purchase_sample:
     f = features(user_history[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, start_of_week(p.I_DATE))
-    training_features.append(f)
+    sample_features.append(f)
 
 nonpurchase_sample = []
 
@@ -692,32 +820,37 @@ while nonpurchase_count < N//2:
         result = purchase_by_user_coupon_week.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_week_index), 0)
         if result == 0:
             f = features(random_user_history, random_coupon, random_week_start)
-            training_features.append(f)
+            sample_features.append(f)
             nonpurchase_count += 1
 
-training_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
+sample_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
 
-regressor = sklearn.ensemble.RandomForestRegressor(random_state=classifier_random_state,
-                                                   n_estimators=n_estimators,
-                                                   min_samples_leaf=min_samples_leaf,
-                                                   max_features=max_features,
-                                                   n_jobs=n_jobs,
-                                                   oob_score=True)
+features_and_outcomes = list(zip(sample_features,sample_outcomes))
+random_state.shuffle(features_and_outcomes)
+
+train_size = (2*N) // 3
+train_features,train_outcomes = zip(*features_and_outcomes[0:train_size])
+test_features,test_outcomes = zip(*features_and_outcomes[train_size:])
+del features_and_outcomes
 
 logger.info('{0} features'.format(len(feature_names)))
-logger.info('Training...')
+for name, regressor in regressors:
+    logger.info('Training {0}: {1}'.format(name, regressor))
 
-regressor.fit(training_features, training_outcomes)
-training_score = regressor.score(training_features, training_outcomes)
+    regressor.fit(train_features, train_outcomes)
+    test_prediction = regressor.predict(test_features)
 
-logger.info('Importances:')
-for i,n in sorted(zip(regressor.feature_importances_, feature_names), reverse=True):
-    logger.info('{0:>30}: {1:6.4f}'.format(n, i))
-
-logger.info('Performance:')
-logger.info('{0:>24}: {1:6.4f}/{2:6.4f}'.format('training/oob r-squared', training_score, regressor.oob_score_))
-logger.info('{0:>24}: {1:7.5f}/{2:7.5f}'.format('min/max oob prediction', min(regressor.oob_prediction_), max(regressor.oob_prediction_)))
-logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(training_outcomes, regressor.oob_prediction_)))
+    if hasattr(regressor, 'feature_importances_'):
+        logger.info('Importances:')
+        for i,n in sorted(zip(regressor.feature_importances_, feature_names), reverse=True):
+            logger.info('{0:>30}: {1:6.4f}'.format(n, i))
+        
+    logger.info('Performance:')
+    logger.info('{0:>24}: {1:7.5f}/{2:7.5f}'.format('min/max test prediction', min(test_prediction), max(test_prediction)))
+    logger.info('{0:>24}: {1:6.4f}'.format('Default classifier/regressor score', regressor.score(test_features, test_outcomes)))
+    logger.info('{0:>24}: {1:6.4f}'.format('MSE', sklearn.metrics.mean_squared_error(test_outcomes, test_prediction)))
+    logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(test_outcomes, test_prediction)))
+    logger.info('{0:>24}: {1:5.3f}'.format('log loss', sklearn.metrics.log_loss(test_outcomes, test_prediction)))
 
 
 logger.info('Scoring and writing output file.')
