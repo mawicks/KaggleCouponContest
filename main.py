@@ -883,9 +883,9 @@ class NBAccumulator:
 
         print ('column sums\t{0:>10} {1}'.format(
             self.purchase_count,
-            ' '.join(map('{0:>10}'.format, (self.column_sums.get(column, 0) for column in self.known_field_values)))
+            ' '.join(map('{0:>10}'.format, (self.column_sums.get(column, 0) for column in self.known_field_values[0:limit])))
         ))
-
+        
     def score (self, coupon, user_history, date):
         if not self.frozen:
             self.freeze()
