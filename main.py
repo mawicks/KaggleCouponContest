@@ -15,7 +15,7 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-N = 180000
+N = 60000
 n_estimators = 4000
 min_samples_leaf = 1 + int(0.00025*N)
 min_samples_leaf = 5
@@ -374,47 +374,7 @@ for h,c in coupon.items():
 user_history = collections.OrderedDict()
 UserHistory = collections.namedtuple('UserHistory', ['user', 'visit', 'purchase'])
 
-class NBAccumulator:
-    """Naive Base accumulator"""
-    def __init__ (self, field):
-        self.field = field
-        self.getter = operator.attrgetter(field)
-        self.count_by_purchase_field_value = {}
-        self.count_by_purchase_field_value_and_previous_field_value = {}
-
-    def add (self, purchase_list):
-        history_set = set()
-        for purchase in purchase_list:
-            field_value = self.getter(purchase.COUPON_ID_hash)
-            self.count_by_purchase_field_value[field_value] = self.count_by_purchase_field_value.get(field_value, 1) + 1
-            
-            for historic_field_value in history_set:
-                t = (field_value, historic_field_value)
-                self.count_by_purchase_field_value_and_previous_field_value[t] = self.count_by_purchase_field_value_and_previous_field_value.get(t, 1) + 1
-                
-            history_set.add(field_value)
-
-    def dump (self, field_values):
-        print ('\nDump of {0}'.format(self.field))
-        field_values = tuple(field_values)
-
-        print('value\n\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
-        for fv in field_values:
-            print ('{0:>10}:\n\t{1:>10} {2}'.format(
-                fv,
-                self.count_by_purchase_field_value.get(fv, 1),
-                ' '.join(map('{0:>10}'.format, [self.count_by_purchase_field_value_and_previous_field_value.get((fv,pv), 1) for pv in field_values]))
-            ))
-
-accumulators = (
-    NBAccumulator('small_area_name'),
-    NBAccumulator('large_area_name'),
-    NBAccumulator('large_area_name'),
-    NBAccumulator('CAPSULE_TEXT'),
-    NBAccumulator('GENRE_NAME'),
-)
-
-logger.info('Building user history list and accumulating purchase stats')
+logger.info('Building user history list')
 
 for h,u in user.items():
     visit_history = visit_by_user.get(h, [])
@@ -422,13 +382,7 @@ for h,u in user.items():
 
     user_history[h] = UserHistory(user=u, visit=visit_history, purchase=purchase_history)
     
-    for a in accumulators:
-        a.add(purchase_history)
-    
     prefecture_set.add(u.PREF_NAME)
-
-accumulators[0].dump(list(small_area_name_set)[0:10])
-accumulators[4].dump(genre_name_set)
 
 def log_set(logger, s, name):
 #    logger.info('{0} ({1}): {2}'.format(name, len(s), ', '.join(sorted(map(str, s)))))
@@ -849,6 +803,129 @@ def features(user_history, coupon, date):
 
     return x
 
+class NBAccumulator:
+    """Naive Base accumulator"""
+    def __init__ (self, purchase_or_visit, field):
+        """purchase_or_visit ('purchase' or 'visit') identifies which type of history
+        to accumulate stats on"""
+        self.field = field
+        self.purchase_or_visit = purchase_or_visit
+
+        self.known_field_values = set()
+        
+
+        self.history_getter = operator.attrgetter(purchase_or_visit)
+        self.field_getter = operator.attrgetter(field)
+        self.coupon_getter = operator.attrgetter('VIEW_COUPON_ID_hash' if purchase_or_visit == 'visit' else 'COUPON_ID_hash')
+        
+        self.count_by_field_value = {}
+        self.count_by_field_value_and_earlier_field_value = {}
+
+        # The next structure doesn't get updated until freeze() is called.
+        self.column_sums = {}
+        self.purchase_count = 0
+
+        self.frozen = False
+
+    def __repr__ (self):
+        return "NBAccumulator({0},{1})".format(self.purchase_or_visit, self.field)
+
+    def __history_set(self, history_list, date):
+        history_set = set()
+        for history_item in history_list:
+            if history_item.I_DATE < date:
+                history_set.add(self.field_getter(self.coupon_getter(history_item)))
+        return history_set
+
+    def add (self, purchase, user_history):
+        date = purchase.I_DATE
+        field_value = self.field_getter(purchase.COUPON_ID_hash)
+
+        self.known_field_values.add(field_value)
+        self.count_by_field_value[field_value] = self.count_by_field_value.get(field_value, 1) + 1
+
+        history_list = self.history_getter(user_history)
+        history_set = self.__history_set(history_list, date)
+                
+        for historic_field_value in history_set:
+            self.known_field_values.add(historic_field_value)
+            
+            t = (field_value, historic_field_value)
+            self.count_by_field_value_and_earlier_field_value[t] = self.count_by_field_value_and_earlier_field_value.get(t, 1) + 1
+
+    def freeze(self):
+        for column in self.known_field_values:
+            self.column_sums[column] = sum(
+                (self.count_by_field_value_and_earlier_field_value.get((row, column), 1) for row in self.known_field_values)
+            )
+
+        self.purchase_count = sum(
+            (self.count_by_field_value.get(column, 1) for column in self.known_field_values)
+        )
+
+        self.frozen = True
+
+    def dump (self, limit=None):
+        print ('{0}: {1}'.format(self.purchase_or_visit, self.field))
+        
+        if limit:
+            print ('Limited to {0} category values'.format(limit))
+            
+        field_values = list(self.known_field_values)[0:limit]
+        print('value\n\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
+        
+        for fv in field_values:
+            print ('{0:>10}:\n\t{1:>10} {2}'.format(
+                fv,
+                self.count_by_field_value.get(fv, 1),
+                ' '.join(map('{0:>10}'.format, [self.count_by_field_value_and_earlier_field_value.get((fv,pv), 1) for pv in field_values]))
+            ))
+
+        print ('column sums\t{0:>10} {1}'.format(
+            self.purchase_count,
+            ' '.join(map('{0:>10}'.format, (self.column_sums.get(column, 0) for column in self.known_field_values)))
+        ))
+
+    def score (self, coupon, user_history, date):
+        if not self.frozen:
+            self.freeze()
+
+        candidate_field_value = self.field_getter(coupon)
+        p_class = self.count_by_field_value.get(field_value, 1) / self.sum
+        p_not_class = 1 - p_class
+
+        history_list = self.history_getter(user_history)
+        history_set = self.__history_set(history_list, date)
+
+        log_likelihood = 0.0
+        candidate_value_count = self.count_by_field_value.get(candidate_field_value, 1)
+        not_candidate_value_count = self.purchase_count - candidate_value_count
+        
+        for fv in self.known_field_values:
+            t = (candidate_field_value, fv)
+            if fv in history_set:
+                log_likelihood += math.log (self.count_by_field_value_and_earlier_field_value.get(t,1) / candidate_value_count)
+                log_likelihood -= math.log ((self.column_sum.get(fv, 1) - self.count_by_field_value_and_earlier_field_value.get(t,1)) /
+                                            not_candidate_value_count)
+            else:
+                log_likelihood += math.log (1 - self.count_by_field_value_and_earlier_field_value.get(t,1) / candidate_value_count)
+                log_likelihood -= math.log (1 - ((self.column_sum.get(fv, 1) - self.count_by_field_value_and_earlier_field_value.get(t,1)) /
+                                                 not_candidate_value_count))
+        return log_likelihood
+
+accumulators = (
+    NBAccumulator('purchase', 'small_area_name'),
+    NBAccumulator('purchase', 'large_area_name'),
+    NBAccumulator('purchase', 'large_area_name'),
+    NBAccumulator('purchase', 'CAPSULE_TEXT'),
+    NBAccumulator('purchase', 'GENRE_NAME'),
+    NBAccumulator('visit', 'small_area_name'),
+    NBAccumulator('visit', 'large_area_name'),
+    NBAccumulator('visit', 'large_area_name'),
+    NBAccumulator('visit', 'CAPSULE_TEXT'),
+    NBAccumulator('visit', 'GENRE_NAME'),
+)
+
 # Resample the probability space to get failed cases
 # The space is assumed to be (user, coupon, date) tuples
 # where date is in the overlap region where the user is registered and the coupon is displayed
@@ -858,10 +935,22 @@ coupon_list = tuple(coupon.values())
 random_state.seed(123456)
 purchase_sample = random_state.sample(tuple(purchase.values()), N//2)
 
+logger.info('Building features and accumulating stats for Naive Bayes in random sample')
 sample_features = []
 for p in purchase_sample:
-    f = features(user_history[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, start_of_week(p.I_DATE))
+    uh  = user_history[p.USER_ID_hash.USER_ID_hash]
+
+    f = features(uh, p.COUPON_ID_hash, start_of_week(p.I_DATE))
     sample_features.append(f)
+
+    for a in accumulators:
+        a.add(p, uh)
+
+for a in accumulators:
+    a.freeze()
+        
+accumulators[0].dump(10)
+accumulators[4].dump()
 
 nonpurchase_sample = []
 
