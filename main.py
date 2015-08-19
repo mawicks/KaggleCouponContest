@@ -15,7 +15,7 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-N = 60000
+N = 180000
 n_estimators = 4000
 min_samples_leaf = 1 + int(0.00025*N)
 min_samples_leaf = 5
@@ -66,7 +66,7 @@ regressors = (
          oob_score=oob_score
      )),
 
-    ('RandomForestClassifer',
+    ('RandomForestClassifier',
      WrappedClassifier(sklearn.ensemble.RandomForestClassifier(
          random_state=classifier_random_state,
          n_estimators=n_estimators,
@@ -104,7 +104,7 @@ regressors = (
 )
 
 # For now, don't use boosting methods
-regressors = regressors[1:2]
+regressors = regressors[0:1]
 
 def week_index(date):
     return int((date - sample_start_date).days / 7)
@@ -423,10 +423,14 @@ class RandomFeatureSet:
 
 class ExperimentalFeatureSet:
     def names(self):
-        return ('week_index',)
+        return (
+#            'week_index',
+        )
     
     def map (self, user_history, coupon, date):
-        return (week_index(date),)
+        return (
+#            week_index(date),
+        )
 
 def days_accessible(user, coupon, week_start_date):
     """Returns the number of days the coupon was accessible to the user during
@@ -463,7 +467,7 @@ class UserPurchaseHistoryFeatureSet:
             'days_since_ken_purchase',
 
             'recency_small_area_purchase',
-            'recency_large_area_purchase',
+#            'recency_large_area_purchase',
             'recency_ken_purchase',
 
             'percent_from_genre_purchase',
@@ -477,12 +481,12 @@ class UserPurchaseHistoryFeatureSet:
 
             'in_previous_purchase_area',
 
-            'max_qty_genre',
-            'max_qty_capsule',
+#            'max_qty_genre',
+#            'max_qty_capsule',
 
-            'max_qty_ken',
-            'max_qty_large_area',
-            'max_qty_small_area',
+#            'max_qty_ken',
+#            'max_qty_large_area',
+#            'max_qty_small_area',
         )
 
     def map(self, user_history, coupon, date):
@@ -559,7 +563,7 @@ class UserPurchaseHistoryFeatureSet:
             days_since_ken_name,
 
             days_since_purchase - days_since_small_area_name,
-            days_since_purchase - days_since_large_area_name,
+#            days_since_purchase - days_since_large_area_name,
             days_since_purchase - days_since_ken_name,
 
             float(genre_count) / purchase_count if purchase_count > 0 else -999,
@@ -573,12 +577,12 @@ class UserPurchaseHistoryFeatureSet:
 
             len(small_area_by_coupon.get(coupon.COUPON_ID_hash, set()).intersection(previous_purchase_area)),
 
-            max_qty_genre,
-            max_qty_capsule,
+#            max_qty_genre,
+#            max_qty_capsule,
 
-            max_qty_ken,
-            max_qty_large_area,
-            max_qty_small_area,
+#            max_qty_ken,
+#            max_qty_large_area,
+#            max_qty_small_area,
         )
 
         return result
@@ -588,8 +592,8 @@ class UserVisitHistoryFeatureSet:
     def names(self):
         return (
             'number_of_visits',
-            'number_of_genre_visits',
-            'number_of_capsule_visits',
+#            'number_of_genre_visits',
+#            'number_of_capsule_visits',
 
             'days_since_visit',
             'days_since_genre_visit',
@@ -600,7 +604,7 @@ class UserVisitHistoryFeatureSet:
             'days_since_ken_visit',
 
             'recency_small_area_visit',
-            'recency_large_area_visit',
+#            'recency_large_area_visit',
             'recency_ken_visit',
             
 #            'days_since_coupon_visit',
@@ -608,8 +612,8 @@ class UserVisitHistoryFeatureSet:
             'percent_from_genre_visit',
             'percent_from_capsule_visit',
 
-            'peak_hour',
-            'peak_dow',
+#            'peak_hour',
+#            'peak_dow',
         )
 
     def map(self, user_history, coupon, date):
@@ -666,8 +670,8 @@ class UserVisitHistoryFeatureSet:
 
         result = (
             visit_count,
-            genre_count,
-            capsule_count,
+#            genre_count,
+#            capsule_count,
 
             days_since_visit,
             days_since_genre,
@@ -678,7 +682,7 @@ class UserVisitHistoryFeatureSet:
             days_since_ken_name,
 
             days_since_visit - days_since_small_area_name,
-            days_since_visit - days_since_large_area_name,
+#            days_since_visit - days_since_large_area_name,
             days_since_visit - days_since_ken_name,
 
 #            days_since_coupon,
@@ -686,8 +690,8 @@ class UserVisitHistoryFeatureSet:
             float(genre_count) / visit_count if visit_count > 0 else 0,
             float(capsule_count) / visit_count if visit_count > 0 else 0,
 
-            peak_hour,
-            peak_dow,
+#            peak_hour,
+#            peak_dow,
         )
         return result
 
@@ -695,23 +699,30 @@ class SimpleUserFeatureSet:
     def names(self):
         return (
             'age',
-            'gender',
+#            'gender',
             'prefecture',
             'days_as_member')
 
     def map (self, user_history, coupon, date):
         user = user_history.user
-        return (user.AGE,
-                gender_encoder.map(user.SEX_ID),
-                prefecture_encoder.map(user.PREF_NAME),
-                (date - user.REG_DATE).days)
+        return (
+            user.AGE,
+#            gender_encoder.map(user.SEX_ID),
+            prefecture_encoder.map(user.PREF_NAME),
+            (date - user.REG_DATE).days
+        )
 
 
 class SimpleCouponFeatureSet:
     def names(self):
-        return ('capsule_text', 'genre_name',
-                'large_area_name', 'ken_name', 'small_area_name',
-                'price_rate', 'catalog_price', 'discount_price',
+        return ('capsule_text',
+                'genre_name',
+#                'large_area_name',
+#                'ken_name',
+                'small_area_name',
+                'price_rate',
+                'catalog_price',
+                'discount_price',
                 'price_reduction',
                 'valid_period',
                 'days_on_display',
@@ -724,8 +735,8 @@ class SimpleCouponFeatureSet:
         return (
             capsule_encoder.map(coupon.CAPSULE_TEXT),
             genre_name_encoder.map(coupon.GENRE_NAME),
-            large_area_name_encoder.map(coupon.large_area_name),
-            prefecture_encoder.map(coupon.ken_name),
+#            large_area_name_encoder.map(coupon.large_area_name),
+#            prefecture_encoder.map(coupon.ken_name),
             small_area_name_encoder.map(coupon.small_area_name),
             coupon.PRICE_RATE,
             coupon.CATALOG_PRICE,
@@ -777,9 +788,282 @@ class JointFeatureSet:
         return (prefecture_distance(user_history.user.PREF_NAME, coupon.ken_name),)
 
 # dump(user_history)
+class NBAccumulator:
+    """Naive Base accumulator"""
+    def __init__ (self, purchase_or_visit, field_name):
+        """purchase_or_visit ('purchase' or 'visit') identifies which type of history
+        to accumulate stats on"""
+        self.field_name = field_name
+        self.purchase_or_visit = purchase_or_visit
 
+        self.known_field_values = set()
+        
+        self.history_getter = operator.attrgetter(purchase_or_visit)
+        self.field_getter = operator.attrgetter(field_name)
+        self.coupon_getter = operator.attrgetter('VIEW_COUPON_ID_hash' if purchase_or_visit == 'visit' else 'COUPON_ID_hash')
+        
+        self.item_count_by_field_value = {}
+        self.item_count = 0
+        
+        self.count_by_field_value_and_earlier_field_value = {}
+
+        self.column_count = {}
+        self.row_count = {}
+        self.total_count = 0
+
+    def __repr__ (self):
+        return "NBAccumulator({0},{1})".format(self.purchase_or_visit, self.field_name)
+
+    def __history_set(self, history_list, date):
+        history_set = set()
+        for history_item in history_list:
+            if history_item.I_DATE < date:
+                history_set.add(self.field_getter(self.coupon_getter(history_item)))
+        return history_set
+
+    def add (self, purchase, user_history):
+        date = purchase.I_DATE
+        field_value = self.field_getter(purchase.COUPON_ID_hash)
+
+        self.known_field_values.add(field_value)
+        self.item_count_by_field_value[field_value] = self.item_count_by_field_value.get(field_value, 0) + 1
+        self.item_count += 1
+
+        history_list = self.history_getter(user_history)
+        history_set = self.__history_set(history_list, date)
+                
+        for historic_field_value in history_set:
+            self.known_field_values.add(historic_field_value)
+            
+            t = (field_value, historic_field_value)
+            self.count_by_field_value_and_earlier_field_value[t] = self.count_by_field_value_and_earlier_field_value.get(t, 0) + 1
+            
+            self.column_count[historic_field_value] = self.column_count.get(historic_field_value, 0) + 1
+            self.row_count[field_value] = self.row_count.get(field_value, 0) + 1
+            self.total_count += 1
+            
+    def dump (self, limit=None):
+        print ('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
+        
+        if limit:
+            print ('Limited to {0} category values'.format(limit))
+            
+        field_values = list(self.known_field_values)[0:limit]
+        print('value\n\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
+        
+        for fv in field_values:
+            print ('{0:>10}:\n\t{1:>10} {2}'.format(
+                fv,
+                self.row_count.get(fv, 0),
+                ' '.join(map('{0:>10}'.format, [self.count_by_field_value_and_earlier_field_value.get((fv,pv), 0) for pv in field_values]))
+            ))
+
+        print ('column sums:\n\t{0:>10} {1}'.format(
+            self.total_count,
+            ' '.join(map('{0:>10}'.format, (self.column_count[column] for column in field_values[0:limit])))
+        ))
+
+        print ('item counts:\n\t{0:>10} {1}'.format(
+            self.item_count,
+            ' '.join(map('{0:>10}'.format, (self.item_count_by_field_value.get(fv,0) for fv in field_values[0:limit])))
+        ))
+        
+    def score (self, coupon, user_history, date):
+        candidate_field_value = self.field_getter(coupon)
+
+        history_list = self.history_getter(user_history)
+        history_set = self.__history_set(history_list, date)
+
+        N = len(self.known_field_values)
+
+        candidate_item_count = self.item_count_by_field_value.get(candidate_field_value, 0)
+        not_candidate_item_count = self.item_count - candidate_item_count
+
+        p_class = float(1.0 + candidate_item_count) / (N + self.item_count)
+        p_not_class = 1.0 - p_class
+        log_likelihood = math.log(p_class / p_not_class)
+        
+        candidate_row_count = self.row_count.get(candidate_field_value, 0)
+        
+        for fv in self.known_field_values:
+            t = (candidate_field_value, fv)
+            field_value_count = self.count_by_field_value_and_earlier_field_value.get(t, 0)
+
+            p_x_candidate = float(1.0 + field_value_count) / (N + candidate_row_count)
+            p_x_not_candidate = float(1.0 + self.column_count[fv] - field_value_count) / (N + self.total_count - candidate_row_count)
+
+            if fv in history_set:
+                log_likelihood += math.log (p_x_candidate / p_x_not_candidate)
+            else:
+                log_likelihood += math.log ((1 - p_x_candidate) / (1 - p_x_not_candidate))
+
+        return log_likelihood
+    
+class MultinomialNBAccumulator:
+    """Naive Base accumulator"""
+    def __init__ (self, purchase_or_visit, field_name):
+        """purchase_or_visit ('purchase' or 'visit') identifies which type of history
+        to accumulate stats on"""
+        self.field_name = field_name
+        self.purchase_or_visit = purchase_or_visit
+
+        self.known_field_values = set()
+
+        self.history_getter = operator.attrgetter(purchase_or_visit)
+        self.field_getter = operator.attrgetter(field_name)
+        self.coupon_getter = operator.attrgetter('VIEW_COUPON_ID_hash' if purchase_or_visit == 'visit' else 'COUPON_ID_hash')
+        
+        self.item_count_by_field_value = {}
+        self.item_count = 0
+        
+        self.count_by_field_value_and_earlier_field_value = {}
+
+        self.column_count = {}
+        self.row_count = {}
+        self.total_count = 0
+
+    def __repr__ (self):
+        return "NBAccumulator({0},{1})".format(self.purchase_or_visit, self.field_name)
+
+    def __history_set(self, history_list, date):
+        history_set = {}
+        for history_item in history_list:
+            if history_item.I_DATE < date:
+                fv = self.field_getter(self.coupon_getter(history_item))
+                history_set[fv] = history_set.get(fv, 0) + 1
+        return history_set
+
+    def add (self, purchase, user_history):
+        date = purchase.I_DATE
+        field_value = self.field_getter(purchase.COUPON_ID_hash)
+
+        self.known_field_values.add(field_value)
+        self.item_count_by_field_value[field_value] = self.item_count_by_field_value.get(field_value, 0) + 1
+        self.item_count += 1
+
+        history_list = self.history_getter(user_history)
+        history_set = self.__history_set(history_list, date)
+                
+        for historic_field_value,count in history_set.items():
+            self.known_field_values.add(historic_field_value)
+            
+            t = (field_value, historic_field_value)
+            self.count_by_field_value_and_earlier_field_value[t] = self.count_by_field_value_and_earlier_field_value.get(t, 0) + count
+
+            self.column_count[historic_field_value] = self.column_count.get(historic_field_value, 0) + count
+            self.row_count[field_value] = self.row_count.get(field_value, 0) + count
+            self.total_count += count
+
+    def dump (self, limit=None):
+        print ('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
+        
+        if limit:
+            print ('Limited to {0} category values'.format(limit))
+            
+        field_values = list(self.known_field_values)[0:limit]
+        print('value\n\tall {0}'.format(' '.join(map('{0:>10}'.format, map(str, field_values)))))
+        
+        for fv in field_values:
+            print ('{0:>10}:\n\t{1:>10} {2}'.format(
+                str(fv),
+                self.row_count.get(fv, 0),
+                ' '.join(map('{0:>10}'.format, [self.count_by_field_value_and_earlier_field_value.get((fv,pv), 0) for pv in field_values]))
+            ))
+
+        print ('column sums:\n\t{0:>10} {1}'.format(
+            self.total_count,
+            ' '.join(map('{0:>10}'.format, map(str, (self.column_count[column] for column in field_values[0:limit]))))
+        ))
+
+        print ('item counts:\n\t{0:>10} {1}'.format(
+            self.item_count,
+            ' '.join(map('{0:>10}'.format, (self.item_count_by_field_value.get(fv,0) for fv in field_values[0:limit])))
+        ))
+        
+    def score (self, coupon, user_history, date):
+        candidate_field_value = self.field_getter(coupon)
+
+        history_list = self.history_getter(user_history)
+        history_set = self.__history_set(history_list, date)
+
+        N = len(self.known_field_values)
+
+        candidate_item_count = self.item_count_by_field_value.get(candidate_field_value, 0)
+        not_candidate_item_count = self.item_count - candidate_item_count
+        
+        p_class = float(1.0 + candidate_item_count) / (N + self.item_count)
+        p_not_class = 1.0 - p_class
+        log_likelihood = math.log(p_class / p_not_class)
+        
+        candidate_row_count = self.row_count.get(candidate_field_value, 0)
+        for fv,count in history_set.items():
+            t = (candidate_field_value, fv)
+            field_value_count = self.count_by_field_value_and_earlier_field_value.get(t, 0)
+            
+            p_x_candidate = float(1.0 + field_value_count) / (N + candidate_row_count )
+            p_x_not_candidate = float(1.0 + self.column_count.get(fv, 0) - field_value_count) / (N + self.total_count - candidate_row_count)
+
+            log_likelihood += count * math.log (p_x_candidate / p_x_not_candidate)
+            
+        return log_likelihood
+    
+accumulators = (
+    MultinomialNBAccumulator('visit', 'small_area_name'),
+    MultinomialNBAccumulator('visit', 'large_area_name'),
+    MultinomialNBAccumulator('visit', 'CAPSULE_TEXT'),
+    MultinomialNBAccumulator('visit', 'GENRE_NAME'),
+    NBAccumulator('visit', 'small_area_name'),
+    NBAccumulator('visit', 'large_area_name'),
+    NBAccumulator('visit', 'ken_name'),
+    NBAccumulator('visit', 'CAPSULE_TEXT'),
+    NBAccumulator('visit', 'GENRE_NAME'),
+    NBAccumulator('purchase', 'small_area_name'),
+    NBAccumulator('purchase', 'large_area_name'),
+    NBAccumulator('purchase', 'ken_name'),
+    NBAccumulator('purchase', 'CAPSULE_TEXT'),
+    NBAccumulator('purchase', 'GENRE_NAME'),
+)
+
+class NBFeatureSet:
+    def names(self):
+        return (
+            'small_area_visit_history_mn',
+            'large_area_visit_history_mn',
+            'capsule_visit_history_mn',
+            'genre_visit_history_mn',
+            'small_area_visit_history_nb',
+            'large_area_visit_history_nb',
+            'ken_visit_history_nb',
+            'capsule_visit_history_nb',
+            'genre_visit_history_nb',
+            'small_area_purchase_history_nb',
+            'large_area_purchase_history_nb',
+            'ken_purchase_history_nb',
+            'capsule_text_purchase_history_nb',
+            'genre_name_purchase_history_nb',
+        )
+    
+    def map(self, user_history, coupon, date):
+        return (
+            accumulators[0].score(coupon, user_history, date),
+            accumulators[1].score(coupon, user_history, date),
+            accumulators[2].score(coupon, user_history, date),
+            accumulators[3].score(coupon, user_history, date),
+            accumulators[4].score(coupon, user_history, date),
+            accumulators[5].score(coupon, user_history, date),
+            accumulators[6].score(coupon, user_history, date),
+            accumulators[7].score(coupon, user_history, date),
+            accumulators[8].score(coupon, user_history, date),
+            accumulators[9].score(coupon, user_history, date),
+            accumulators[10].score(coupon, user_history, date),
+            accumulators[11].score(coupon, user_history, date),
+            accumulators[12].score(coupon, user_history, date),
+            accumulators[13].score(coupon, user_history, date),
+        )
+    
 feature_extractors = (
-    ExperimentalFeatureSet(),
+    NBFeatureSet(),
+#    ExperimentalFeatureSet(),
     AvailabilityFeatureSet(),
     UserPurchaseHistoryFeatureSet(),
     UserVisitHistoryFeatureSet(),
@@ -789,6 +1073,7 @@ feature_extractors = (
     JointFeatureSet(),
     RandomFeatureSet()
 )
+
 
 feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 
@@ -803,128 +1088,6 @@ def features(user_history, coupon, date):
 
     return x
 
-class NBAccumulator:
-    """Naive Base accumulator"""
-    def __init__ (self, purchase_or_visit, field):
-        """purchase_or_visit ('purchase' or 'visit') identifies which type of history
-        to accumulate stats on"""
-        self.field = field
-        self.purchase_or_visit = purchase_or_visit
-
-        self.known_field_values = set()
-        
-
-        self.history_getter = operator.attrgetter(purchase_or_visit)
-        self.field_getter = operator.attrgetter(field)
-        self.coupon_getter = operator.attrgetter('VIEW_COUPON_ID_hash' if purchase_or_visit == 'visit' else 'COUPON_ID_hash')
-        
-        self.count_by_field_value = {}
-        self.count_by_field_value_and_earlier_field_value = {}
-
-        # The next structure doesn't get updated until freeze() is called.
-        self.column_sums = {}
-        self.purchase_count = 0
-
-        self.frozen = False
-
-    def __repr__ (self):
-        return "NBAccumulator({0},{1})".format(self.purchase_or_visit, self.field)
-
-    def __history_set(self, history_list, date):
-        history_set = set()
-        for history_item in history_list:
-            if history_item.I_DATE < date:
-                history_set.add(self.field_getter(self.coupon_getter(history_item)))
-        return history_set
-
-    def add (self, purchase, user_history):
-        date = purchase.I_DATE
-        field_value = self.field_getter(purchase.COUPON_ID_hash)
-
-        self.known_field_values.add(field_value)
-        self.count_by_field_value[field_value] = self.count_by_field_value.get(field_value, 1) + 1
-
-        history_list = self.history_getter(user_history)
-        history_set = self.__history_set(history_list, date)
-                
-        for historic_field_value in history_set:
-            self.known_field_values.add(historic_field_value)
-            
-            t = (field_value, historic_field_value)
-            self.count_by_field_value_and_earlier_field_value[t] = self.count_by_field_value_and_earlier_field_value.get(t, 1) + 1
-
-    def freeze(self):
-        for column in self.known_field_values:
-            self.column_sums[column] = sum(
-                (self.count_by_field_value_and_earlier_field_value.get((row, column), 1) for row in self.known_field_values)
-            )
-
-        self.purchase_count = sum(
-            (self.count_by_field_value.get(column, 1) for column in self.known_field_values)
-        )
-
-        self.frozen = True
-
-    def dump (self, limit=None):
-        print ('{0}: {1}'.format(self.purchase_or_visit, self.field))
-        
-        if limit:
-            print ('Limited to {0} category values'.format(limit))
-            
-        field_values = list(self.known_field_values)[0:limit]
-        print('value\n\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
-        
-        for fv in field_values:
-            print ('{0:>10}:\n\t{1:>10} {2}'.format(
-                fv,
-                self.count_by_field_value.get(fv, 1),
-                ' '.join(map('{0:>10}'.format, [self.count_by_field_value_and_earlier_field_value.get((fv,pv), 1) for pv in field_values]))
-            ))
-
-        print ('column sums\t{0:>10} {1}'.format(
-            self.purchase_count,
-            ' '.join(map('{0:>10}'.format, (self.column_sums.get(column, 0) for column in self.known_field_values[0:limit])))
-        ))
-        
-    def score (self, coupon, user_history, date):
-        if not self.frozen:
-            self.freeze()
-
-        candidate_field_value = self.field_getter(coupon)
-        p_class = self.count_by_field_value.get(field_value, 1) / self.sum
-        p_not_class = 1 - p_class
-
-        history_list = self.history_getter(user_history)
-        history_set = self.__history_set(history_list, date)
-
-        log_likelihood = 0.0
-        candidate_value_count = self.count_by_field_value.get(candidate_field_value, 1)
-        not_candidate_value_count = self.purchase_count - candidate_value_count
-        
-        for fv in self.known_field_values:
-            t = (candidate_field_value, fv)
-            if fv in history_set:
-                log_likelihood += math.log (self.count_by_field_value_and_earlier_field_value.get(t,1) / candidate_value_count)
-                log_likelihood -= math.log ((self.column_sum.get(fv, 1) - self.count_by_field_value_and_earlier_field_value.get(t,1)) /
-                                            not_candidate_value_count)
-            else:
-                log_likelihood += math.log (1 - self.count_by_field_value_and_earlier_field_value.get(t,1) / candidate_value_count)
-                log_likelihood -= math.log (1 - ((self.column_sum.get(fv, 1) - self.count_by_field_value_and_earlier_field_value.get(t,1)) /
-                                                 not_candidate_value_count))
-        return log_likelihood
-
-accumulators = (
-    NBAccumulator('purchase', 'small_area_name'),
-    NBAccumulator('purchase', 'large_area_name'),
-    NBAccumulator('purchase', 'large_area_name'),
-    NBAccumulator('purchase', 'CAPSULE_TEXT'),
-    NBAccumulator('purchase', 'GENRE_NAME'),
-    NBAccumulator('visit', 'small_area_name'),
-    NBAccumulator('visit', 'large_area_name'),
-    NBAccumulator('visit', 'large_area_name'),
-    NBAccumulator('visit', 'CAPSULE_TEXT'),
-    NBAccumulator('visit', 'GENRE_NAME'),
-)
 
 # Resample the probability space to get failed cases
 # The space is assumed to be (user, coupon, date) tuples
@@ -932,25 +1095,29 @@ accumulators = (
 user_history_list = tuple(user_history.values())
 coupon_list = tuple(coupon.values())
 
-random_state.seed(123456)
 purchase_sample = random_state.sample(tuple(purchase.values()), N//2)
 
-logger.info('Building features and accumulating stats for Naive Bayes in random sample')
 sample_features = []
+
+logger.info('Accumulating stats for Naive Bayes in random sample')
+
+for p in purchase_sample:
+    uh  = user_history[p.USER_ID_hash.USER_ID_hash]
+    for a in accumulators:
+        a.add(p, uh)
+
+accumulators[0].dump(10)
+accumulators[1].dump(10)
+    
+logger.info('Building features for random sample')
+
 for p in purchase_sample:
     uh  = user_history[p.USER_ID_hash.USER_ID_hash]
 
     f = features(uh, p.COUPON_ID_hash, start_of_week(p.I_DATE))
     sample_features.append(f)
 
-    for a in accumulators:
-        a.add(p, uh)
-
-for a in accumulators:
-    a.freeze()
         
-accumulators[0].dump(10)
-accumulators[4].dump()
 
 nonpurchase_sample = []
 
