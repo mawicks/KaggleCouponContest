@@ -16,7 +16,7 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-N = 30000
+N = 240000
 n_estimators = 4000
 min_samples_leaf = 1 + int(0.00025*N)
 min_samples_leaf = 5
