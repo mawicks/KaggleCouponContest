@@ -113,7 +113,7 @@ class NBAccumulator:
             field_value_count = self.count_by_field_value_and_earlier_field_value.get(t, 0)
 
             p_x_candidate = float(1.0 + field_value_count) / (N + candidate_row_count)
-            p_x_not_candidate = float(1.0 + self.column_count[fv] - field_value_count) / (N + self.total_count - candidate_row_count)
+            p_x_not_candidate = float(1.0 + self.column_count.get(fv, 0) - field_value_count) / (N + self.total_count - candidate_row_count)
 
 #            print('\t\tfv={0}, p_x_candidate={1}/{2} ({3}), p_x_not_candidate = {4}/{5} ({6})'.format(
 #                fv, field_value_count, candidate_row_count, p_x_candidate, self.column_count.get(fv,0) - field_value_count, self.total_count-candidate_row_count, p_x_not_candidate)
