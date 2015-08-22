@@ -16,7 +16,8 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-N = 240000
+p_frac = 0.10 # Fraction of training cases that should be positive
+N = 250000
 n_estimators = 4000
 min_samples_leaf = 1 + int(0.00025*N)
 min_samples_leaf = 5
@@ -358,13 +359,12 @@ for purchase_list in purchase_by_user.values():
 visit_by_user = collections.OrderedDict()
 for v in visit:
     visit_by_user.setdefault(v.USER_ID_hash.USER_ID_hash, []).append(v)
-
-# Let garbage collector work    
 del visit    
 
 # Sort visit lists    
-for visit_list in visit_by_user.values():
+for u,visit_list in visit_by_user.items():
     visit_list.sort(key=operator.attrgetter('I_DATE'), reverse=True)
+    visit_by_user[u] = tuple(visit_list)
 
 # Area
 small_area_by_coupon = collections.OrderedDict()
@@ -809,19 +809,11 @@ class SimpleCouponFeatureSet:
 class CouponUsableDateFeatureSet:
     def names(self):
         return (
-            'usable_date_sat',
-            'usable_date_sun',
-            'usable_date_weekend',
-            'usable_date_holidays',
             'usable_days_everything',
         )
 
     def map (self, user_history, coupon, date):
         return (
-            coupon.USABLE_DATE_SAT,
-            coupon.USABLE_DATE_SUN,
-            coupon.USABLE_DATE_SAT+coupon.USABLE_DATE_SUN,
-            ( coupon.USABLE_DATE_SUN + coupon.USABLE_DATE_HOLIDAY + coupon.USABLE_DATE_BEFORE_HOLIDAY ),
             (coupon.USABLE_DATE_MON*1 + coupon.USABLE_DATE_TUE*(1<<3) + coupon.USABLE_DATE_WED*(1<<6) + coupon.USABLE_DATE_THU*(1<<9) +
              coupon.USABLE_DATE_FRI*(1<<12) + coupon.USABLE_DATE_SAT*(1<<15) + coupon.USABLE_DATE_SUN*(1<<18) + coupon.USABLE_DATE_HOLIDAY*(1<<21) +
              coupon.USABLE_DATE_BEFORE_HOLIDAY*(1<<24)),
@@ -927,7 +919,7 @@ def features(user_history, coupon, date):
 user_history_list = tuple(user_history.values())
 coupon_list = tuple(coupon.values())
 
-purchase_sample = random_state.sample(tuple(purchase.values()), N//2)
+purchase_sample = random_state.sample(tuple(purchase.values()), int(p_frac*N))
 
 # Let garbage collector work
 del purchase        
@@ -959,7 +951,7 @@ logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
 saw_a_one = False
 
-while nonpurchase_count < N//2:
+while len(purchase_sample) + nonpurchase_count < N:
     random_user_history = user_history_list[random_state.randrange(len(user_history_list))]
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     random_user = random_user_history.user
@@ -977,7 +969,7 @@ while nonpurchase_count < N//2:
 # Let garbage collector work
 del purchase_by_user_coupon_week
             
-sample_outcomes = (N//2) * [1.0] + nonpurchase_count * [0.0]
+sample_outcomes = len(purchase_sample) * [1.0] + nonpurchase_count * [0.0]
 
 features_and_outcomes = list(zip(sample_features,sample_outcomes))
 random_state.shuffle(features_and_outcomes)
