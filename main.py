@@ -24,6 +24,7 @@ min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
 oob_score=False
+n_positive = int(p_frac*N)
 
 # Random number seeds
 random_state = random.Random(123456)
@@ -34,7 +35,12 @@ classifier_random_state.seed(12345)
 
 
 # Important constants
-sample_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
+# train_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
+train_start_date = datetime.datetime(year=2012, month=1, day=1, hour=0, minute=0)
+test_week_start_date = datetime.datetime(year=2012, month=6, day=24)
+
+train_period_in_weeks = (test_week_start_date - train_start_date).days // 7 
+
 
 class WrappedClassifier:
     """Wrap the brain-dead classifier API to make it look more like a regressor."""
@@ -109,27 +115,15 @@ regressors = (
 regressors = regressors[0:1]
 
 def week_index(date):
-    return int((date - sample_start_date).days / 7)
+    return int((date - train_start_date).days / 7)
 
 def start_of_week(date):
-    return sample_start_date + week_index(date)*datetime.timedelta(days=7)
+    return train_start_date + week_index(date)*datetime.timedelta(days=7)
 
 logger = logging.getLogger(__name__)
 FORMAT = '%(asctime)-15s %(message)s'
 logging.basicConfig(format=FORMAT)
 logger.setLevel(logging.DEBUG)
-
-logger.info('Parameters: '
-            'N: {0}, '
-            'n_estimators: {1}, '
-            'min_samples_leaf: {2}, '
-            'max_features: {3}, '
-            'n_jobs: {4}'.format(N,
-                                 n_estimators,
-                                 min_samples_leaf,
-                                 max_features,
-                                 n_jobs
-                             ))
 
 def dump(d):
     for k, v in d.items():
@@ -248,8 +242,6 @@ def earth_distance(coordinate1, coordinate2):
                          + math.cos(lat1 - lat2))
     return distance*4000
 
-prefecture_locations = read_file('prefecture_locations.csv', 'Location', index='PREF_NAME')
-
 def prefecture_distance(pref1, pref2):
     try:
         loc1 = prefecture_locations[pref1]
@@ -259,6 +251,25 @@ def prefecture_distance(pref1, pref2):
         result = -99999.0
 
     return result
+
+logger.info('Parameters: '
+            'N: {0:,}, '
+            'p_frac: {1:5.3f} ({2:,} pos cases), '
+            'n_estimators: {3:,}, '
+            'min_samples_leaf: {4}, '
+            'max_features: {5}, '
+            'n_jobs: {6}'.format(N,
+                                 p_frac,
+                                 n_positive,
+                                 n_estimators,
+                                 min_samples_leaf,
+                                 max_features,
+                                 n_jobs
+                             ))
+
+logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
+
+# prefecture_locations = read_file('prefecture_locations.csv', 'Location', index='PREF_NAME')
 
 user = read_file('user_list.csv', 'User', 'USER_ID_hash')
 coupon = read_file('coupon_list_train.csv', 'Coupon', 'COUPON_ID_hash')
@@ -292,7 +303,13 @@ purchase = collections.OrderedDict (
     (k, v._replace(USER_ID_hash=user[v.USER_ID_hash],
                    COUPON_ID_hash=coupon[v.COUPON_ID_hash]))
     for k,v in read_file('coupon_detail_train.csv', 'Purchase', 'PURCHASEID_hash').items()
+    if v.I_DATE >= train_start_date
 )
+
+logger.info('Retaining {0:,} purchases records between {1} and {2}'.format(
+    len(purchase),
+    min(p.I_DATE for p in purchase.values()),
+    max(p.I_DATE for p in purchase.values())))
 
 visit = tuple( v._replace(USER_ID_hash=user[v.USER_ID_hash],
                            VIEW_COUPON_ID_hash=coupon.get(v.VIEW_COUPON_ID_hash, missing_coupon),
@@ -352,8 +369,9 @@ for p in purchase.values():
         logger.warning('\tcoupon:  {0} disp date range: {1} to {2}'.format(p.COUPON_ID_hash.COUPON_ID_hash, p.COUPON_ID_hash.DISPFROM, p.COUPON_ID_hash.DISPEND))
 
 # Sort purchase lists
-for purchase_list in purchase_by_user.values():
-    purchase_list.sort(key=operator.attrgetter('I_DATE'), reverse=True)
+for u,purchase_list in purchase_by_user.items():
+    purchase_list.sort(key=operator.attrgetter('I_DATE'), reverse=False)
+    purchase_by_user[u] = tuple(purchase_list)
 
 # Visit
 visit_by_user = collections.OrderedDict()
@@ -363,7 +381,7 @@ del visit
 
 # Sort visit lists    
 for u,visit_list in visit_by_user.items():
-    visit_list.sort(key=operator.attrgetter('I_DATE'), reverse=True)
+    visit_list.sort(key=operator.attrgetter('I_DATE'), reverse=False)
     visit_by_user[u] = tuple(visit_list)
 
 # Area
@@ -388,8 +406,8 @@ UserHistory = collections.namedtuple('UserHistory', ['user', 'visit', 'purchase'
 logger.info('Building user history list')
 
 for h,u in user.items():
-    visit_history = visit_by_user.get(h, [])
-    purchase_history = purchase_by_user.get(h, [])
+    visit_history = visit_by_user.get(h, ())
+    purchase_history = purchase_by_user.get(h, ())
 
     user_history[h] = UserHistory(user=u, visit=visit_history, purchase=purchase_history)
     
@@ -832,11 +850,18 @@ accumulators = (
     naive_bayes.MultinomialNBAccumulator('visit', 'large_area_name'),
     naive_bayes.MultinomialNBAccumulator('visit', 'CAPSULE_TEXT'),
     naive_bayes.MultinomialNBAccumulator('visit', 'GENRE_NAME'),
+    
+    naive_bayes.MultinomialNBAccumulator('purchase', 'small_area_name'),
+    naive_bayes.MultinomialNBAccumulator('purchase', 'large_area_name'),
+    naive_bayes.MultinomialNBAccumulator('purchase', 'CAPSULE_TEXT'),
+    naive_bayes.MultinomialNBAccumulator('purchase', 'GENRE_NAME'),
+    
     naive_bayes.NBAccumulator('visit', 'small_area_name'),
     naive_bayes.NBAccumulator('visit', 'large_area_name'),
     naive_bayes.NBAccumulator('visit', 'ken_name'),
     naive_bayes.NBAccumulator('visit', 'CAPSULE_TEXT'),
     naive_bayes.NBAccumulator('visit', 'GENRE_NAME'),
+    
     naive_bayes.NBAccumulator('purchase', 'small_area_name'),
     naive_bayes.NBAccumulator('purchase', 'large_area_name'),
     naive_bayes.NBAccumulator('purchase', 'ken_name'),
@@ -851,11 +876,18 @@ class NBFeatureSet:
             'large_area_visit_history_mn',
             'capsule_visit_history_mn',
             'genre_visit_history_mn',
+
+            'small_area_purchase_history_mn',
+            'large_area_purchase_history_mn',
+            'capsule_purchase_history_mn',
+            'genre_purchase_history_mn',
+            
             'small_area_visit_history_nb',
             'large_area_visit_history_nb',
             'ken_visit_history_nb',
             'capsule_visit_history_nb',
             'genre_visit_history_nb',
+            
             'small_area_purchase_history_nb',
             'large_area_purchase_history_nb',
             'ken_purchase_history_nb',
@@ -879,6 +911,10 @@ class NBFeatureSet:
             accumulators[11].score(coupon, user_history, date),
             accumulators[12].score(coupon, user_history, date),
             accumulators[13].score(coupon, user_history, date),
+            accumulators[14].score(coupon, user_history, date),
+            accumulators[15].score(coupon, user_history, date),
+            accumulators[16].score(coupon, user_history, date),
+            accumulators[17].score(coupon, user_history, date),
         )
     
 feature_extractors = (
@@ -897,6 +933,8 @@ feature_extractors = (
 
 feature_names = reduce(operator.add, (fe.names() for fe in feature_extractors))
 
+logger.info('{0} features'.format(len(feature_names)))
+
 def features(user_history, coupon, date):
     start_of_week_date = start_of_week(date)
     x = reduce (operator.add,
@@ -908,7 +946,7 @@ def features(user_history, coupon, date):
         for fe in feature_extractors:
             f = fe.map(user_history, coupon, start_of_week_date)
             if len(f) != len(fe.names()):
-                logger.error('Culprit may be len={0}, names={1}, len(names) = {2}'.format(len(f), f.names(), len(f.names())))
+                logger.error('Culprit may be len={0}, names={1}, len(names) = {2}'.format(len(f), fe.names(), len(fe.names())))
                 sys.exit(1)
     return x
 
@@ -919,7 +957,7 @@ def features(user_history, coupon, date):
 user_history_list = tuple(user_history.values())
 coupon_list = tuple(coupon.values())
 
-purchase_sample = random_state.sample(tuple(purchase.values()), int(p_frac*N))
+purchase_sample = random_state.sample(tuple(purchase.values()), n_positive)
 
 # Let garbage collector work
 del purchase        
@@ -956,8 +994,8 @@ while len(purchase_sample) + nonpurchase_count < N:
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     random_user = random_user_history.user
 
-    random_week_index = random.randrange(51) # Only 51 weeks in training data; 52nd week is test set.
-    random_week_start = sample_start_date + datetime.timedelta(days=7*random_week_index)
+    random_week_index = random.randrange(train_period_in_weeks)
+    random_week_start = train_start_date + datetime.timedelta(days=7*random_week_index)
 
     if days_accessible(random_user, random_coupon, random_week_start) > 0:
         result = purchase_by_user_coupon_week.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_week_index), 0)
@@ -979,7 +1017,6 @@ train_features,train_outcomes = zip(*features_and_outcomes[0:train_size])
 test_features,test_outcomes = zip(*features_and_outcomes[train_size:])
 del features_and_outcomes
 
-logger.info('{0} features'.format(len(feature_names)))
 for name, regressor in regressors:
     logger.info('Training {0}: {1}'.format(name, regressor))
     
@@ -1008,11 +1045,15 @@ with open('features.csv', "w") as feature_output:
 logger.info('Scoring and writing output file.')
 coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
 
-with open("submission.csv", "w") as outputfile:
-    writer = csv.writer(outputfile)
-    writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
+KEEP = 10
+with open("submission.csv", "w") as outputfile, \
+     open("probabilities.csv", "w") as probabilityfile:
 
-    test_week_start_date = datetime.datetime(year=2012, month=6, day=24)
+    writer = csv.writer(outputfile)
+    probability_writer = csv.writer(probabilityfile)
+    
+    writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
+    probability_writer.writerow(['USER_ID_hash'] + list(itertools.chain(*[('probability_{0}'.format(i), 'COUPON_ID_hash_{0}'.format(i)) for i in range(KEEP)])))
 
     for user_hash in sorted(user_history.keys()):
         a_user_history = user_history[user_hash]
@@ -1030,7 +1071,8 @@ with open("submission.csv", "w") as outputfile:
         else:
             p_and_h = ()
             
-        winners = ' '.join((h for p,h in p_and_h[0:10] if p > 0))
+        winners = ' '.join((h for p,h in p_and_h[:10] if p > 0))
         writer.writerow((user_hash, winners))
+        probability_writer.writerow([user_hash] + list(itertools.chain(*p_and_h[:10])))
 
 logger.info('Finished.')

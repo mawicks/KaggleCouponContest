@@ -1,6 +1,8 @@
 import datetime
+import functools
 import operator
 import math
+
 
 class NBAccumulator:
     """Naive Base accumulator"""
@@ -28,6 +30,7 @@ class NBAccumulator:
     def __repr__ (self):
         return "NBAccumulator({0},{1})".format(self.purchase_or_visit, self.field_name)
 
+#    @functools.lru_cache(maxsize=1024)
     def __history_set(self, history_list, date):
         history_set = set()
         for history_item in history_list:
@@ -152,6 +155,7 @@ class MultinomialNBAccumulator:
     def __repr__ (self):
         return "NBAccumulator({0},{1})".format(self.purchase_or_visit, self.field_name)
 
+#    @functools.lru_cache(maxsize=1024)
     def __history_set(self, history_list, date):
         history_set = {}
         for history_item in history_list:
@@ -271,12 +275,12 @@ if __name__ == "__main__":
     visit_orlando = Visit(coupon_orlando, view_date)
 
     purchases = [
-        (Purchase(coupon_arlington, purchase_date), History(5 * [visit_arlington])),
-        (Purchase(coupon_orlando, purchase_date), History(5 * [visit_orlando])),
-        (Purchase(coupon_alexandria, purchase_date), History([visit_arlington, visit_alexandria, visit_alexandria, visit_alexandria, visit_dc])),
-        (Purchase(coupon_alexandria, purchase_date),History([visit_arlington, visit_alexandria, visit_arlington, visit_alexandria])), 
-        (Purchase(coupon_dc, purchase_date),History([visit_arlington, visit_arlington, visit_dc, visit_dc, visit_dc])), 
-        (Purchase(coupon_arlington, purchase_date),History([visit_dc])),
+        (Purchase(coupon_arlington, purchase_date), History(tuple(5 * [visit_arlington]))),
+        (Purchase(coupon_orlando, purchase_date), History(tuple(5 * [visit_orlando]))),
+        (Purchase(coupon_alexandria, purchase_date), History((visit_arlington, visit_alexandria, visit_alexandria, visit_alexandria, visit_dc))),
+        (Purchase(coupon_alexandria, purchase_date),History((visit_arlington, visit_alexandria, visit_arlington, visit_alexandria))), 
+        (Purchase(coupon_dc, purchase_date),History((visit_arlington, visit_arlington, visit_dc, visit_dc, visit_dc))), 
+        (Purchase(coupon_arlington, purchase_date),History((visit_dc,))),
     ]
 
     accumulator = NBAccumulator('visit', 'city')
@@ -290,9 +294,9 @@ if __name__ == "__main__":
     mn_accumulator.dump()
                                 
     test_histories = [
-        History([visit_arlington, visit_dc]),
-        History(3 * [visit_orlando]),
-        History([visit_orlando, visit_dc, visit_orlando]),
+        History((visit_arlington, visit_dc)),
+        History(tuple(3 * [visit_orlando])),
+        History((visit_orlando, visit_dc, visit_orlando)),
     ]
 
     for test_history in test_histories:
