@@ -14,9 +14,9 @@ class NBAccumulator:
 
         self.known_field_values = set()
         
-        self.history_getter = operator.attrgetter(purchase_or_visit)
-        self.field_getter = operator.attrgetter(field_name)
-        self.coupon_getter = operator.attrgetter('VIEW_COUPON_ID_hash' if purchase_or_visit == 'visit' else 'COUPON_ID_hash')
+        self.history_getter = operator.itemgetter(purchase_or_visit)
+        self.field_getter = operator.itemgetter(field_name)
+        self.coupon_getter = operator.itemgetter('COUPON')
         
         self.item_count_by_field_value = {}
         self.item_count = 0
@@ -34,13 +34,13 @@ class NBAccumulator:
     def __history_set(self, history_list, date):
         history_set = set()
         for history_item in history_list:
-            if history_item.I_DATE < date:
+            if history_item['I_DATE'] < date:
                 history_set.add(self.field_getter(self.coupon_getter(history_item)))
         return history_set
 
     def add (self, purchase, user_history):
-        date = purchase.I_DATE
-        field_value = self.field_getter(purchase.COUPON_ID_hash)
+        date = purchase['I_DATE']
+        field_value = self.field_getter(purchase['COUPON'])
 
         self.known_field_values.add(field_value)
         self.item_count_by_field_value[field_value] = self.item_count_by_field_value.get(field_value, 0) + 1
@@ -77,7 +77,7 @@ class NBAccumulator:
 
         print ('column sums:\n\t{0:>10} {1}'.format(
             self.total_count,
-            ' '.join(map('{0:>10}'.format, (self.column_count[column] for column in field_values[0:limit])))
+            ' '.join(map('{0:>10}'.format, (self.column_count.get(column, 0) for column in field_values[0:limit])))
         ))
 
         print ('item counts:\n\t{0:>10} {1}'.format(
@@ -139,9 +139,9 @@ class MultinomialNBAccumulator:
 
         self.known_field_values = set()
 
-        self.history_getter = operator.attrgetter(purchase_or_visit)
-        self.field_getter = operator.attrgetter(field_name)
-        self.coupon_getter = operator.attrgetter('VIEW_COUPON_ID_hash' if purchase_or_visit == 'visit' else 'COUPON_ID_hash')
+        self.history_getter = operator.itemgetter(purchase_or_visit)
+        self.field_getter = operator.itemgetter(field_name)
+        self.coupon_getter = operator.itemgetter('COUPON')
         
         self.item_count_by_field_value = {}
         self.item_count = 0
@@ -159,14 +159,14 @@ class MultinomialNBAccumulator:
     def __history_set(self, history_list, date):
         history_set = {}
         for history_item in history_list:
-            if history_item.I_DATE < date:
+            if history_item['I_DATE'] < date:
                 fv = self.field_getter(self.coupon_getter(history_item))
                 history_set[fv] = history_set.get(fv, 0) + 1
         return history_set
 
     def add (self, purchase, user_history):
-        date = purchase.I_DATE
-        field_value = self.field_getter(purchase.COUPON_ID_hash)
+        date = purchase['I_DATE']
+        field_value = self.field_getter(purchase['COUPON'])
 
         self.known_field_values.add(field_value)
         self.item_count_by_field_value[field_value] = self.item_count_by_field_value.get(field_value, 0) + 1
@@ -203,7 +203,7 @@ class MultinomialNBAccumulator:
 
         print ('column sums:\n\t{0:>10} {1}'.format(
             self.total_count,
-            ' '.join(map('{0:>10}'.format, map(str, (self.column_count[column] for column in field_values[0:limit]))))
+            ' '.join(map('{0:>10}'.format, map(str, (self.column_count.get(column, 0) for column in field_values[0:limit]))))
         ))
 
         print ('item counts:\n\t{0:>10} {1}'.format(

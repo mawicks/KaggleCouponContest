@@ -16,22 +16,22 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-p_frac = 0.10 # Fraction of training cases that should be positive
+p_frac = 0.32 # Fraction of training cases that should be positive
 N = 250000
+#N = 20000
 n_estimators = 4000
-min_samples_leaf = 1 + int(0.00025*N)
-min_samples_leaf = 5
+# n_estimators = 1000
+min_samples_leaf = 1 + int(N/1000)
+# min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
 oob_score=False
 n_positive = int(p_frac*N)
+seed=12345678
 
 # Random number seeds
-random_state = random.Random(123456)
-random_state.seed(12345)
-
-classifier_random_state = numpy.random.RandomState(seed=987654)
-classifier_random_state.seed(12345)
+random_state = random.Random(seed)
+classifier_random_state = numpy.random.RandomState(seed=seed)
 
 
 # Important constants
@@ -211,7 +211,7 @@ mapper.update(
     }
 )
 
-def read_file (filename, item_type_name, index=None):
+def read_file (filename, index=None):
     logger.info ('Loading {0}...'.format(filename))
     with open(filename, "r") as user_file:
         reader = csv.reader(user_file)
@@ -219,19 +219,19 @@ def read_file (filename, item_type_name, index=None):
         # Explicitly ignore any UTF-8 BOM marks left around as characters
         # Using codecs.open wasn't any better.
         header = tuple(map(lambda s: s.replace('\ufeff',''), next(reader)))
-        item_mapper = tuple(map(mapper.__getitem__, header))
 
-        Type = collections.namedtuple(item_type_name, header)
-        globals()[item_type_name] = Type
-
+        generator = (dict((h,mapper[h](i)) for h,i in zip(header, line))
+                     for line in reader)
+        
         if index != None:
             result = collections.OrderedDict(
-                (o.__getattribute__(index), o)
-                for o in ( Type._make((m(i) for m,i in zip(item_mapper, line))) for line in reader )
+                (o[index], o)
+                for o in generator
             )
         else:
-            result = tuple( Type._make((m(i) for m,i in zip(item_mapper, line))) for line in reader )
-    logger.info ('{1:,} {2} objects created from {0}'.format(filename, len(result), item_type_name))
+            result = list(generator)
+            
+    logger.info ('{1:,} records loaded from {0}'.format(filename, len(result)))
     return result
 
 def earth_distance(coordinate1, coordinate2):
@@ -246,7 +246,7 @@ def prefecture_distance(pref1, pref2):
     try:
         loc1 = prefecture_locations[pref1]
         loc2 = prefecture_locations[pref2]
-        result = float(int(earth_distance((loc1.LATITUDE,loc1.LONGITUDE), (loc2.LATITUDE,loc2.LONGITUDE))))
+        result = float(int(earth_distance((loc1['LATITUDE'],loc1['LONGITUDE']), (loc2['LATITUDE'],loc2['LONGITUDE']))))
     except:
         result = -99999.0
 
@@ -269,56 +269,107 @@ logger.info('Parameters: '
 
 logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
 
-# prefecture_locations = read_file('prefecture_locations.csv', 'Location', index='PREF_NAME')
+# prefecture_locations = read_file('prefecture_locations.csv', index='PREF_NAME')
 
-user = read_file('user_list.csv', 'User', 'USER_ID_hash')
-coupon = read_file('coupon_list_train.csv', 'Coupon', 'COUPON_ID_hash')
+user = read_file('user_list.csv', 'USER_ID_hash')
+logger.info('Sample user: {0}'.format(list(itertools.islice(user.values(), 0, 1))[0]))
 
-missing_coupon = Coupon(CAPSULE_TEXT=None,
-                        GENRE_NAME=None,
-                        PRICE_RATE=-999,
-                        CATALOG_PRICE=-999,
-                        DISCOUNT_PRICE=-999,
-                        DISPFROM=datetime.datetime.min,
-                        DISPEND=datetime.datetime.max,
-                        DISPPERIOD=(datetime.datetime.max-datetime.datetime.min).days,
-                        VALIDFROM=datetime.datetime.min,
-                        VALIDEND=datetime.datetime.max,
-                        VALIDPERIOD=(datetime.datetime.max-datetime.datetime.min).days,
-                        USABLE_DATE_MON=0,
-                        USABLE_DATE_TUE=0,
-                        USABLE_DATE_WED=0,
-                        USABLE_DATE_THU=0,
-                        USABLE_DATE_FRI=0,
-                        USABLE_DATE_SAT=0,
-                        USABLE_DATE_SUN=0,
-                        USABLE_DATE_HOLIDAY=0,
-                        USABLE_DATE_BEFORE_HOLIDAY=0,
-                        large_area_name=None,
-                        ken_name=None,
-                        small_area_name=None,
-                        COUPON_ID_hash='*MISSING*')
+def coupon_computed_fields(coupon_list):
+    # Add some computed fields in the coupon records
+    for h,c in coupon_list.items():
+    # Quantized various prices to make it easier to use Naive Bayers
+        try:
+            c['QUANTIZED_PRICE_RATE'] = int((c['PRICE_RATE'] // 10) * 10.0)
+            c['QUANTIZED_DISCOUNT_PRICE'] = int(2 ** (int(math.log2(0.01 + c['DISCOUNT_PRICE']) * 2.0) / 2.0))
+            c['QUANTIZED_CATALOG_PRICE'] = int(2 ** (int(math.log2(0.01 + c['CATALOG_PRICE']) * 2.0) / 2.0))
+        except:
+            print(c['PRICE_RATE'])
+            print(c['DISCOUNT_PRICE'])
+            print(c['CATALOG_PRICE'])
+            raise
+    
+coupon = read_file('coupon_list_train.csv', 'COUPON_ID_hash')
+coupon_computed_fields(coupon)
 
-purchase = collections.OrderedDict (
-    (k, v._replace(USER_ID_hash=user[v.USER_ID_hash],
-                   COUPON_ID_hash=coupon[v.COUPON_ID_hash]))
-    for k,v in read_file('coupon_detail_train.csv', 'Purchase', 'PURCHASEID_hash').items()
-    if v.I_DATE >= train_start_date
-)
 
-logger.info('Retaining {0:,} purchases records between {1} and {2}'.format(
+for c in list(itertools.islice(coupon.values(), 0, 3)):
+    logger.info('Sample coupon: {0}'.format(c))
+
+missing_coupon = dict([('CAPSULE_TEXT', None),
+                       ('GENRE_NAME', None),
+                       ('PRICE_RATE', -999),
+                       ('CATALOG_PRICE', -999),
+                       ('DISCOUNT_PRICE', -999),
+                       ('DISPFROM', datetime.datetime.min),
+                       ('DISPEND', datetime.datetime.max),
+                       ('DISPPERIOD', (datetime.datetime.max-datetime.datetime.min).days),
+                       ('VALIDFROM', datetime.datetime.min),
+                       ('VALIDEND', datetime.datetime.max),
+                       ('VALIDPERIOD', (datetime.datetime.max-datetime.datetime.min).days),
+                       ('USABLE_DATE_MON', 0),
+                       ('USABLE_DATE_TUE', 0),
+                       ('USABLE_DATE_WED', 0),
+                       ('USABLE_DATE_THU', 0),
+                       ('USABLE_DATE_FRI', 0),
+                       ('USABLE_DATE_SAT', 0),
+                       ('USABLE_DATE_SUN', 0),
+                       ('USABLE_DATE_HOLIDAY', 0),
+                       ('USABLE_DATE_BEFORE_HOLIDAY', 0),
+                       ('large_area_name', None),
+                       ('ken_name', None),
+                       ('small_area_name', None),
+                       ('COUPON_ID_hash', '*MISSING*'),
+                       ('QUANTIZED_PRICE_RATE', -999),
+                       ('QUANTIZED_DISCOUNT_PRICE', -999),
+                       ('QUANTIZED_CATALOG_PRICE', -999),
+                   ])
+
+purchase = read_file('coupon_detail_train.csv', 'PURCHASEID_hash')
+train_area = read_file('coupon_area_train.csv')
+test_area = read_file('coupon_area_test.csv')
+
+# Dereference user and coupon references and remove records outside the date range
+for k,v in purchase.items():
+    if v['I_DATE'] >= train_start_date:
+        v['USER'] = user[v['USER_ID_hash']]
+        v['COUPON'] = coupon[v['COUPON_ID_hash']]
+        del v['USER_ID_hash'], v['COUPON_ID_hash']
+    else:
+        del purchase[k]
+        
+logger.info('Retained {0:,} purchases records between {1} and {2}'.format(
     len(purchase),
-    min(p.I_DATE for p in purchase.values()),
-    max(p.I_DATE for p in purchase.values())))
+    min(p['I_DATE'] for p in purchase.values()),
+    max(p['I_DATE'] for p in purchase.values())))
 
-visit = tuple( v._replace(USER_ID_hash=user[v.USER_ID_hash],
-                           VIEW_COUPON_ID_hash=coupon.get(v.VIEW_COUPON_ID_hash, missing_coupon),
-                           PURCHASEID_hash=purchase.get(v.PURCHASEID_hash, None))
-                for v in read_file('coupon_visit_train.csv', 'Visit') )
+# Dereference user and purchase references
+visit = read_file('coupon_visit_train.csv')
 
-train_area = read_file('coupon_area_train.csv', 'Area')
-test_area = read_file('coupon_area_test.csv', 'Area')
+missing_coupons = set()
+found_coupons = set()
 
+for v in visit:
+    coupon_id_hash = v['VIEW_COUPON_ID_hash']
+    if coupon_id_hash in coupon:
+        v['COUPON']= coupon[coupon_id_hash]
+        found_coupons.add(coupon_id_hash)
+    else:
+        v['COUPON']= missing_coupon
+        missing_coupons.add(coupon_id_hash)
+
+    user_id_hash = v['USER_ID_hash']
+    if user_id_hash in user:
+        v['USER']= user[user_id_hash]
+    else:
+        logger.info('Visit references user ID: {0} but no such user.'.format(user_id_has))
+        
+    del v['USER_ID_hash'], v['VIEW_COUPON_ID_hash']
+
+if len(found_coupons) > 0:
+    logger.info ("Visit file references {0} coupons found in the coupon list file.".format(len(found_coupons)))
+if len(missing_coupons) > 0:
+    logger.info ("Visit file references {0} coupons NOT FOUND in the coupon list file (replaced with dummy coupon).".format(len(missing_coupons)))
+del missing_coupons
 
 prefecture_set = set()
 large_area_name_set = set()
@@ -331,12 +382,12 @@ genre_name_set = set()
 # and to accumulate any other useful statistics:
 logger.info('Scanning data...')
 
-first_purchase_date = min((p.I_DATE for p in purchase.values()))
-last_purchase_date = max((p.I_DATE for p in purchase.values()))
+first_purchase_date = min((p['I_DATE'] for p in purchase.values()))
+last_purchase_date = max((p['I_DATE'] for p in purchase.values()))
 
 def range_violation(user, coupon, date):
-    start_date = max(user.REG_DATE, coupon.DISPFROM)
-    end_date = min(user.WITHDRAW_DATE, coupon.DISPEND)
+    start_date = max(user['REG_DATE'], coupon['DISPFROM'])
+    end_date = min(user['WITHDRAW_DATE'], coupon['DISPEND'])
     
     if date > end_date:
         return (1, date - end_date)
@@ -352,11 +403,11 @@ logger.info('First/last purchase dates: {0}/{1}'.format(first_purchase_date, las
 purchase_by_user = collections.OrderedDict()
 purchase_by_user_coupon_week = collections.OrderedDict()
 for p in purchase.values():
-    purchase_by_user.setdefault(p.USER_ID_hash.USER_ID_hash, []).append(p)
-    purchase_by_user_coupon_week[(p.USER_ID_hash.USER_ID_hash, p.COUPON_ID_hash.COUPON_ID_hash, week_index(p.I_DATE))] = 1
+    purchase_by_user.setdefault(p['USER']['USER_ID_hash'], []).append(p)
+    purchase_by_user_coupon_week[(p['USER']['USER_ID_hash'], p['COUPON']['COUPON_ID_hash'], week_index(p['I_DATE']))] = 1
 
     # Verify the assumption that purchases do not occur outside the ad display window or when the user is not registered.
-    rv = range_violation(user[p.USER_ID_hash.USER_ID_hash], p.COUPON_ID_hash, p.I_DATE)
+    rv = range_violation(p['USER'], p['COUPON'], p['I_DATE'])
     if rv:
         logger.warning('*** Sale w/o display: '
                        '{0} days, {1} hours, {2} minutes, {3} seconds {4}'.format(rv[1].days,
@@ -364,44 +415,43 @@ for p in purchase.values():
                                                                                   (rv[1].seconds % 3600) // 60,
                                                                                   rv[1].seconds % 60,
                                                                                   'after close' if rv[0]>0 else 'before open'))
-        logger.warning('\tpurchase date: {0}'.format(p.I_DATE))
-        logger.warning('\tuser:  {0} reg date range: {1} to {2}'.format(p.USER_ID_hash.USER_ID_hash, p.USER_ID_hash.REG_DATE, p.USER_ID_hash.WITHDRAW_DATE))
-        logger.warning('\tcoupon:  {0} disp date range: {1} to {2}'.format(p.COUPON_ID_hash.COUPON_ID_hash, p.COUPON_ID_hash.DISPFROM, p.COUPON_ID_hash.DISPEND))
+        logger.warning('\tpurchase date: {0}'.format(p['I_DATE']))
+        logger.warning('\tuser:  {0} reg date range: {1} to {2}'.format(p['USER']['USER_ID_hash'], p['USER']['REG_DATE'], p['USER']['WITHDRAW_DATE']))
+        logger.warning('\tcoupon:  {0} disp date range: {1} to {2}'.format(p['COUPON']['COUPON_ID_hash'], p['COUPON']['DISPFROM'], p['COUPON']['DISPEND']))
 
 # Sort purchase lists
 for u,purchase_list in purchase_by_user.items():
-    purchase_list.sort(key=operator.attrgetter('I_DATE'), reverse=False)
+    purchase_list.sort(key=operator.itemgetter('I_DATE'), reverse=False)
     purchase_by_user[u] = tuple(purchase_list)
 
 # Visit
 visit_by_user = collections.OrderedDict()
 for v in visit:
-    visit_by_user.setdefault(v.USER_ID_hash.USER_ID_hash, []).append(v)
+    visit_by_user.setdefault(v['USER']['USER_ID_hash'], []).append(v)
 del visit    
 
 # Sort visit lists    
 for u,visit_list in visit_by_user.items():
-    visit_list.sort(key=operator.attrgetter('I_DATE'), reverse=False)
+    visit_list.sort(key=operator.itemgetter('I_DATE'), reverse=False)
     visit_by_user[u] = tuple(visit_list)
 
 # Area
 small_area_by_coupon = collections.OrderedDict()
 for a in itertools.chain(train_area, test_area):
-    small_area_by_coupon.setdefault(a.COUPON_ID_hash, set()).add(a.SMALL_AREA_NAME)
-    prefecture_set.add(a.PREF_NAME)
-    small_area_name_set.add(a.SMALL_AREA_NAME)
+    small_area_by_coupon.setdefault(a['COUPON_ID_hash'], set()).add(a['SMALL_AREA_NAME'])
+    prefecture_set.add(a['PREF_NAME'])
+    small_area_name_set.add(a['SMALL_AREA_NAME'])
 
 # Coupon
 for h,c in coupon.items():
-    capsule_text_set.add(c.CAPSULE_TEXT)
-    genre_name_set.add(c.GENRE_NAME)
-    large_area_name_set.add(c.large_area_name)
-    ken_name_set.add(c.ken_name)
-    small_area_name_set.add(c.small_area_name)
+    capsule_text_set.add(c['CAPSULE_TEXT'])
+    genre_name_set.add(c['GENRE_NAME'])
+    large_area_name_set.add(c['large_area_name'])
+    ken_name_set.add(c['ken_name'])
+    small_area_name_set.add(c['small_area_name'])
 
 # User
 user_history = collections.OrderedDict()
-UserHistory = collections.namedtuple('UserHistory', ['user', 'visit', 'purchase'])
 
 logger.info('Building user history list')
 
@@ -409,9 +459,11 @@ for h,u in user.items():
     visit_history = visit_by_user.get(h, ())
     purchase_history = purchase_by_user.get(h, ())
 
-    user_history[h] = UserHistory(user=u, visit=visit_history, purchase=purchase_history)
+    user_history[h] = { 'user': u,
+                        'visit': visit_history,
+                        'purchase': purchase_history }
     
-    prefecture_set.add(u.PREF_NAME)
+    prefecture_set.add(u['PREF_NAME'])
 
 del purchase_by_user, visit_by_user 
 
@@ -467,8 +519,8 @@ def days_accessible(user, coupon, week_start_date):
     """Returns the number of days the coupon was accessible to the user during
     the week beginning on week_start_date"""
 
-    start = max(week_start_date, user.REG_DATE, coupon.DISPFROM)
-    end = min(week_start_date+datetime.timedelta(days=7), user.WITHDRAW_DATE, coupon.DISPEND)
+    start = max(week_start_date, user['REG_DATE'], coupon['DISPFROM'])
+    end = min(week_start_date+datetime.timedelta(days=7), user['WITHDRAW_DATE'], coupon['DISPEND'])
 
     try:
         interval = (end-start).total_seconds()/86400.0
@@ -485,12 +537,12 @@ class AvailabilityFeatureSet:
         return ('days_accessible_by_user',)
 
     def map (self, user_history, coupon, date):
-        return (days_accessible(user_history.user, coupon, date),)
+        return (days_accessible(user_history['user'], coupon, date),)
 
 class UserPurchaseHistoryFeatureSet:
     def names(self):
         return(
-            'number_of_purchases',
+#            'number_of_purchases',
             'number_of_genre_purchases',
             'number_of_capsule_purchases',
 
@@ -508,17 +560,17 @@ class UserPurchaseHistoryFeatureSet:
             'recency_capsule_purchase',
 
             'recency_small_area_purchase',
-            'recency_large_area_purchase',
+#            'recency_large_area_purchase',
             'recency_ken_purchase',
 
             'percent_from_genre_purchase',
             'percent_from_capsule_purchase',
 
-            'centered_discount_price',
-            'centered_price_rate',
+#            'centered_discount_price',
+#            'centered_price_rate',
 
             'relative_to_previous_discount_price_purchase',
-            'relative_to_previous_price_rate_purchase',
+#            'relative_to_previous_price_rate_purchase',
 
             'relative_to_max_discount_price',
             'relative_to_min_price_rate',
@@ -528,9 +580,9 @@ class UserPurchaseHistoryFeatureSet:
             'max_qty_genre',
             'max_qty_capsule',
 
-            'max_qty_ken',
-            'max_qty_large_area',
-            'max_qty_small_area',
+#            'max_qty_ken',
+#            'max_qty_large_area',
+#            'max_qty_small_area',
         )
 
     def map(self, user_history, coupon, date):
@@ -553,15 +605,15 @@ class UserPurchaseHistoryFeatureSet:
         max_qty_ken = max_qty_large_area = max_qty_small_area = 0
         previous_purchase_area = set()
 
-        for p in user_history.purchase:
+        for p in user_history['purchase']:
             # Consider only the past
-            if p.I_DATE < date:
+            if p['I_DATE'] < date:
                 second_last_purchase = last_purchase
-                last_purchase = p.I_DATE
+                last_purchase = p['I_DATE']
                 days = (date - last_purchase).total_seconds()/86400.0
 
-                discount_price = p.COUPON_ID_hash.DISCOUNT_PRICE
-                price_rate = p.COUPON_ID_hash.PRICE_RATE
+                discount_price = p['COUPON']['DISCOUNT_PRICE']
+                price_rate = p['COUPON']['PRICE_RATE']
 
                 min_price_rate = min(min_price_rate, price_rate)
                 max_discount_price = max(max_discount_price, discount_price)
@@ -570,36 +622,36 @@ class UserPurchaseHistoryFeatureSet:
                 sum_discount_price += discount_price
                 sum_price_rate += price_rate
 
-                item_count = p.ITEM_COUNT
+                item_count = p['ITEM_COUNT']
 
-                if p.COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME:
+                if p['COUPON']['GENRE_NAME'] == coupon['GENRE_NAME']:
                     genre_count += 1
                     days_since_genre = min(days_since_genre, days)
                     max_qty_genre = max(max_qty_genre, item_count)
 
-                if p.COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT:
+                if p['COUPON']['CAPSULE_TEXT'] == coupon['CAPSULE_TEXT']:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
                     max_qty_capsule = max(max_qty_capsule, item_count)
 
-                if p.COUPON_ID_hash.small_area_name == coupon.small_area_name:
+                if p['COUPON']['small_area_name'] == coupon['small_area_name']:
                     days_since_small_area_name = min(days_since_small_area_name, days)
                     max_qty_small_area = max(max_qty_small_area, item_count)
 
-                if p.COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                if p['COUPON']['large_area_name'] == coupon['large_area_name']:
                     days_since_large_area_name = min(days_since_large_area_name, days)
                     max_qty_large_area = max(max_qty_large_area, item_count)
 
-                if p.COUPON_ID_hash.ken_name == coupon.ken_name:
+                if p['COUPON']['ken_name'] == coupon['ken_name']:
                     days_since_ken_name = min(days_since_ken_name, days)
                     max_qty_ken = max(max_qty_ken, item_count)
 
-                previous_purchase_area.add(p.SMALL_AREA_NAME)
+                previous_purchase_area.add(p['SMALL_AREA_NAME'])
 
         days_since_purchase = (date - last_purchase).total_seconds()/86400.0
 
         result = (
-            purchase_count,
+#            purchase_count,
             genre_count,
             capsule_count,
 
@@ -617,29 +669,29 @@ class UserPurchaseHistoryFeatureSet:
             days_since_capsule - days_since_purchase,
 
             days_since_small_area_name - days_since_purchase,
-            days_since_large_area_name - days_since_purchase,
+#            days_since_large_area_name - days_since_purchase,
             days_since_ken_name - days_since_purchase,
 
             float(genre_count) / purchase_count if purchase_count > 0 else -999,
             float(capsule_count) / purchase_count if purchase_count > 0 else -999,
 
-            coupon.DISCOUNT_PRICE - float(sum_discount_price)/ purchase_count if purchase_count > 0 else -999,
-            coupon.PRICE_RATE - float(sum_price_rate)/ purchase_count if purchase_count > 0 else -999,
+#            coupon['DISCOUNT_PRICE'] - float(sum_discount_price)/ purchase_count if purchase_count > 0 else -999,
+#            coupon['PRICE_RATE'] - float(sum_price_rate)/ purchase_count if purchase_count > 0 else -999,
 
-            coupon.DISCOUNT_PRICE - discount_price,
-            coupon.PRICE_RATE - price_rate,
+            coupon['DISCOUNT_PRICE'] - discount_price,
+#            coupon['PRICE_RATE'] - price_rate,
 
-            coupon.DISCOUNT_PRICE - max_discount_price,
-            coupon.PRICE_RATE - min_price_rate,
+            coupon['DISCOUNT_PRICE'] - max_discount_price,
+            coupon['PRICE_RATE'] - min_price_rate,
 
-            len(small_area_by_coupon.get(coupon.COUPON_ID_hash, set()).intersection(previous_purchase_area)),
+            len(small_area_by_coupon.get(coupon['COUPON_ID_hash'], set()).intersection(previous_purchase_area)),
 
             max_qty_genre,
             max_qty_capsule,
 
-            max_qty_ken,
-            max_qty_large_area,
-            max_qty_small_area,
+#            max_qty_ken,
+#            max_qty_large_area,
+#            max_qty_small_area,
         )
 
         return result
@@ -664,7 +716,7 @@ class UserVisitHistoryFeatureSet:
             'recency_capsule_visit',
 
             'recency_small_area_visit',
-            'recency_large_area_visit',
+#            'recency_large_area_visit',
             'recency_ken_visit',
             
 #            'days_since_coupon_visit',
@@ -693,42 +745,44 @@ class UserVisitHistoryFeatureSet:
         
         hour_count = {}
         dow_count = {}
+
+        previous_visit_area = set()
         
-        for v in user_history.visit:
+        for v in user_history['visit']:
             # Consider only the past
-            if v.I_DATE < date:
-                days = (date - v.I_DATE).total_seconds()/86400.0
+            if v['I_DATE'] < date:
+                days = (date - v['I_DATE']).total_seconds()/86400.0
                 days_since_visit = min(days_since_visit, days)
 
-                discount_price = v.VIEW_COUPON_ID_hash.DISCOUNT_PRICE
-                price_rate = v.VIEW_COUPON_ID_hash.PRICE_RATE
+                discount_price = v['COUPON']['DISCOUNT_PRICE']
+                price_rate = v['COUPON']['PRICE_RATE']
                 
                 visit_count += 1
 
-                hour = v.I_DATE.hour
+                hour = v['I_DATE'].hour
                 hour_count[hour] = hour_count.get(hour, 0) + 1
 
-                dow = v.I_DATE.weekday()
+                dow = v['I_DATE'].weekday()
                 dow_count[dow] = dow_count.get(dow, 0) + 1
 
-                if v.VIEW_COUPON_ID_hash.GENRE_NAME == coupon.GENRE_NAME:
+                if v['COUPON']['GENRE_NAME'] == coupon['GENRE_NAME']:
                     genre_count += 1
                     days_since_genre = min(days_since_genre, days)
 
-                if v.VIEW_COUPON_ID_hash.CAPSULE_TEXT == coupon.CAPSULE_TEXT:
+                if v['COUPON']['CAPSULE_TEXT'] == coupon['CAPSULE_TEXT']:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
 
-                if v.VIEW_COUPON_ID_hash.small_area_name == coupon.small_area_name:
+                if v['COUPON']['small_area_name'] == coupon['small_area_name']:
                     days_since_small_area_name = min(days_since_small_area_name, days)
 
-                if v.VIEW_COUPON_ID_hash.large_area_name == coupon.large_area_name:
+                if v['COUPON']['large_area_name'] == coupon['large_area_name']:
                     days_since_large_area_name = min(days_since_large_area_name, days)
 
-                if v.VIEW_COUPON_ID_hash.ken_name == coupon.ken_name:
+                if v['COUPON']['ken_name'] == coupon['ken_name']:
                     days_since_ken_name = min(days_since_ken_name, days)
 
-                if v.VIEW_COUPON_ID_hash.COUPON_ID_hash == coupon.COUPON_ID_hash:
+                if v['COUPON']['COUPON_ID_hash'] == coupon['COUPON_ID_hash']:
                     days_since_coupon = min(days_since_coupon, days)
 
         if len(hour_count) > 0:
@@ -754,7 +808,7 @@ class UserVisitHistoryFeatureSet:
             days_since_capsule - days_since_visit,
 
             days_since_small_area_name - days_since_visit,
-            days_since_large_area_name - days_since_visit,
+#            days_since_large_area_name - days_since_visit,
             days_since_ken_name - days_since_visit,
 
 #            days_since_coupon,
@@ -762,8 +816,8 @@ class UserVisitHistoryFeatureSet:
             float(genre_count) / visit_count if visit_count > 0 else 0,
             float(capsule_count) / visit_count if visit_count > 0 else 0,
 
-            coupon.DISCOUNT_PRICE - discount_price,
-            coupon.PRICE_RATE - price_rate,
+            coupon['DISCOUNT_PRICE'] - discount_price,
+            coupon['PRICE_RATE'] - price_rate,
 
             peak_hour,
             peak_dow,
@@ -774,17 +828,17 @@ class SimpleUserFeatureSet:
     def names(self):
         return (
             'age',
-            'gender',
+#            'gender',
             'prefecture',
             'days_as_member')
 
     def map (self, user_history, coupon, date):
-        user = user_history.user
+        user = user_history['user']
         return (
-            user.AGE,
-            gender_encoder.map(user.SEX_ID),
-            prefecture_encoder.map(user.PREF_NAME),
-            (date - user.REG_DATE).total_seconds()/86400.0
+            user['AGE'],
+#            gender_encoder.map(user['SEX_ID']),
+            prefecture_encoder.map(user['PREF_NAME']),
+            (date - user['REG_DATE']).total_seconds()/86400.0
         )
 
 
@@ -808,20 +862,20 @@ class SimpleCouponFeatureSet:
 
     def map (self, user_history, coupon, date):
         return (
-            capsule_encoder.map(coupon.CAPSULE_TEXT),
-            genre_name_encoder.map(coupon.GENRE_NAME),
-            large_area_name_encoder.map(coupon.large_area_name),
-            prefecture_encoder.map(coupon.ken_name),
-            small_area_name_encoder.map(coupon.small_area_name),
-            coupon.PRICE_RATE,
-            coupon.CATALOG_PRICE,
-            coupon.DISCOUNT_PRICE,
-            coupon.CATALOG_PRICE-coupon.DISCOUNT_PRICE,
-            coupon.VALIDPERIOD,
-            (date - coupon.DISPFROM).total_seconds()/86400.0,
-            (coupon.DISPEND - date).total_seconds()/86400.0,
-            (coupon.VALIDFROM - date).total_seconds()/86400.0,
-            (coupon.VALIDEND - date).total_seconds()/86400.0,
+            capsule_encoder.map(coupon['CAPSULE_TEXT']),
+            genre_name_encoder.map(coupon['GENRE_NAME']),
+            large_area_name_encoder.map(coupon['large_area_name']),
+            prefecture_encoder.map(coupon['ken_name']),
+            small_area_name_encoder.map(coupon['small_area_name']),
+            coupon['PRICE_RATE'],
+            coupon['CATALOG_PRICE'],
+            coupon['DISCOUNT_PRICE'],
+            coupon['CATALOG_PRICE']-coupon['DISCOUNT_PRICE'],
+            coupon['VALIDPERIOD'],
+            (date - coupon['DISPFROM']).total_seconds()/86400.0,
+            (coupon['DISPEND'] - date).total_seconds()/86400.0,
+            (coupon['VALIDFROM'] - date).total_seconds()/86400.0,
+            (coupon['VALIDEND'] - date).total_seconds()/86400.0,
         )
 
 class CouponUsableDateFeatureSet:
@@ -832,9 +886,9 @@ class CouponUsableDateFeatureSet:
 
     def map (self, user_history, coupon, date):
         return (
-            (coupon.USABLE_DATE_MON*1 + coupon.USABLE_DATE_TUE*(1<<3) + coupon.USABLE_DATE_WED*(1<<6) + coupon.USABLE_DATE_THU*(1<<9) +
-             coupon.USABLE_DATE_FRI*(1<<12) + coupon.USABLE_DATE_SAT*(1<<15) + coupon.USABLE_DATE_SUN*(1<<18) + coupon.USABLE_DATE_HOLIDAY*(1<<21) +
-             coupon.USABLE_DATE_BEFORE_HOLIDAY*(1<<24)),
+            (coupon['USABLE_DATE_MON']*1 + coupon['USABLE_DATE_TUE']*(1<<3) + coupon['USABLE_DATE_WED']*(1<<6) + coupon['USABLE_DATE_THU']*(1<<9) +
+             coupon['USABLE_DATE_FRI']*(1<<12) + coupon['USABLE_DATE_SAT']*(1<<15) + coupon['USABLE_DATE_SUN']*(1<<18) + coupon['USABLE_DATE_HOLIDAY']*(1<<21) +
+             coupon['USABLE_DATE_BEFORE_HOLIDAY']*(1<<24)),
         )
 
 class JointFeatureSet:
@@ -842,7 +896,7 @@ class JointFeatureSet:
         return ('distance',)
     
     def map (self, user_history, coupon, date):
-        return (prefecture_distance(user_history.user.PREF_NAME, coupon.ken_name),)
+        return (prefecture_distance(user_history['user']['PREF_NAME'], coupon['ken_name']),)
 
 # dump(user_history)
 accumulators = (
@@ -850,7 +904,7 @@ accumulators = (
     naive_bayes.MultinomialNBAccumulator('visit', 'large_area_name'),
     naive_bayes.MultinomialNBAccumulator('visit', 'CAPSULE_TEXT'),
     naive_bayes.MultinomialNBAccumulator('visit', 'GENRE_NAME'),
-    
+
     naive_bayes.MultinomialNBAccumulator('purchase', 'small_area_name'),
     naive_bayes.MultinomialNBAccumulator('purchase', 'large_area_name'),
     naive_bayes.MultinomialNBAccumulator('purchase', 'CAPSULE_TEXT'),
@@ -867,6 +921,14 @@ accumulators = (
     naive_bayes.NBAccumulator('purchase', 'ken_name'),
     naive_bayes.NBAccumulator('purchase', 'CAPSULE_TEXT'),
     naive_bayes.NBAccumulator('purchase', 'GENRE_NAME'),
+
+    naive_bayes.MultinomialNBAccumulator('visit', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes.MultinomialNBAccumulator('visit', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes.MultinomialNBAccumulator('visit', 'QUANTIZED_CATALOG_PRICE'),
+    
+    naive_bayes.MultinomialNBAccumulator('purchase', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes.MultinomialNBAccumulator('purchase', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes.MultinomialNBAccumulator('purchase', 'QUANTIZED_CATALOG_PRICE'),
 )
 
 class NBFeatureSet:
@@ -884,15 +946,24 @@ class NBFeatureSet:
             
             'small_area_visit_history_nb',
             'large_area_visit_history_nb',
-            'ken_visit_history_nb',
+#            'ken_visit_history_nb',
             'capsule_visit_history_nb',
             'genre_visit_history_nb',
             
             'small_area_purchase_history_nb',
-            'large_area_purchase_history_nb',
-            'ken_purchase_history_nb',
-            'capsule_text_purchase_history_nb',
-            'genre_name_purchase_history_nb',
+#            'large_area_purchase_history_nb',
+#            'ken_purchase_history_nb',
+#            'capsule_text_purchase_history_nb',
+#            'genre_name_purchase_history_nb',
+
+            'qtz_price_rate_visit_history_mn',
+            'qtz_discount_price_visit_history_mn',
+            'qtz_catalog_price_visit_history_mn',
+
+            'qtz_price_rate_purchase_history_mn',
+            'qtz_discount_price_purchase_history_mn',
+            'qtz_catalog_price_purchase_history_mn',
+
         )
     
     def map(self, user_history, coupon, date):
@@ -901,20 +972,32 @@ class NBFeatureSet:
             accumulators[1].score(coupon, user_history, date),
             accumulators[2].score(coupon, user_history, date),
             accumulators[3].score(coupon, user_history, date),
+            
             accumulators[4].score(coupon, user_history, date),
             accumulators[5].score(coupon, user_history, date),
             accumulators[6].score(coupon, user_history, date),
             accumulators[7].score(coupon, user_history, date),
+            
             accumulators[8].score(coupon, user_history, date),
             accumulators[9].score(coupon, user_history, date),
-            accumulators[10].score(coupon, user_history, date),
+#            accumulators[10].score(coupon, user_history, date),
             accumulators[11].score(coupon, user_history, date),
             accumulators[12].score(coupon, user_history, date),
+            
             accumulators[13].score(coupon, user_history, date),
-            accumulators[14].score(coupon, user_history, date),
-            accumulators[15].score(coupon, user_history, date),
-            accumulators[16].score(coupon, user_history, date),
-            accumulators[17].score(coupon, user_history, date),
+#            accumulators[14].score(coupon, user_history, date),
+#            accumulators[15].score(coupon, user_history, date),
+#            accumulators[16].score(coupon, user_history, date),
+#            accumulators[17].score(coupon, user_history, date),
+
+            accumulators[18].score(coupon, user_history, date),
+            accumulators[19].score(coupon, user_history, date),
+            accumulators[20].score(coupon, user_history, date),
+
+            accumulators[21].score(coupon, user_history, date),
+            accumulators[22].score(coupon, user_history, date),
+            accumulators[23].score(coupon, user_history, date),
+
         )
     
 feature_extractors = (
@@ -926,7 +1009,7 @@ feature_extractors = (
     SimpleUserFeatureSet(),
     SimpleCouponFeatureSet(),
     CouponUsableDateFeatureSet(),
-    JointFeatureSet(),
+#    JointFeatureSet(),   # This is just distance.
     RandomFeatureSet()
 )
 
@@ -967,19 +1050,25 @@ sample_features = []
 logger.info('Accumulating stats for Naive Bayes in random sample')
 
 for p in purchase_sample:
-    uh  = user_history[p.USER_ID_hash.USER_ID_hash]
+    uh  = user_history[p['USER']['USER_ID_hash']]
     for a in accumulators:
         a.add(p, uh)
 
-accumulators[0].dump(10)
-accumulators[1].dump(10)
+accumulators[18].dump(10)
+accumulators[19].dump(10)
+accumulators[20].dump(10)
+
+accumulators[21].dump(10)
+accumulators[22].dump(10)
+accumulators[23].dump(10)
+print('End of dump')
     
 logger.info('Building features for random sample')
 
 for p in purchase_sample:
-    uh  = user_history[p.USER_ID_hash.USER_ID_hash]
+    uh  = user_history[p['USER']['USER_ID_hash']]
 
-    f = features(uh, p.COUPON_ID_hash, start_of_week(p.I_DATE))
+    f = features(uh, p['COUPON'], start_of_week(p['I_DATE']))
     sample_features.append(f)
 
 
@@ -989,16 +1078,18 @@ logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
 saw_a_one = False
 
+logger.info ('User space is {0} users'.format(len(user_history_list)))
+
 while len(purchase_sample) + nonpurchase_count < N:
     random_user_history = user_history_list[random_state.randrange(len(user_history_list))]
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
-    random_user = random_user_history.user
+    random_user = random_user_history['user']
 
     random_week_index = random.randrange(train_period_in_weeks)
     random_week_start = train_start_date + datetime.timedelta(days=7*random_week_index)
 
     if days_accessible(random_user, random_coupon, random_week_start) > 0:
-        result = purchase_by_user_coupon_week.get((random_user.USER_ID_hash, random_coupon.COUPON_ID_hash, random_week_index), 0)
+        result = purchase_by_user_coupon_week.get((random_user['USER_ID_hash'], random_coupon['COUPON_ID_hash'], random_week_index), 0)
         if result == 0:
             f = features(random_user_history, random_coupon, random_week_start)
             sample_features.append(f)
@@ -1043,7 +1134,9 @@ with open('features.csv', "w") as feature_output:
         feature_writer.writerow(feature + (prediction, outcome))
 
 logger.info('Scoring and writing output file.')
-coupon_test = read_file('coupon_list_test.csv', 'Coupon', 'COUPON_ID_hash')
+
+coupon_test = read_file('coupon_list_test.csv', 'COUPON_ID_hash')
+coupon_computed_fields(coupon_test)
 
 KEEP = 10
 with open("submission.csv", "w") as outputfile, \
@@ -1057,10 +1150,10 @@ with open("submission.csv", "w") as outputfile, \
 
     for user_hash in sorted(user_history.keys()):
         a_user_history = user_history[user_hash]
-        a_user = a_user_history.user
+        a_user = a_user_history['user']
 
         feature_hash_pairs = tuple(( (features(a_user_history, coupon, test_week_start_date),
-                                      coupon.COUPON_ID_hash)
+                                      coupon['COUPON_ID_hash'])
                                      for coupon in coupon_test.values()
                                      if days_accessible(a_user, coupon, test_week_start_date) > 0))
         
