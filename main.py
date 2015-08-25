@@ -16,12 +16,12 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-p_frac = 0.32 # Fraction of training cases that should be positive
-N = 250000
-#N = 20000
+p_frac = 0.50 # Fraction of training cases that should be positive
+#N = 250000
+N = 160000
+# n_estimators = 4000
 n_estimators = 4000
-# n_estimators = 1000
-min_samples_leaf = 1 + int(N/1000)
+min_samples_leaf = 1 + int(N/4000)
 # min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
@@ -337,7 +337,7 @@ for k,v in purchase.items():
     else:
         del purchase[k]
         
-logger.info('Retained {0:,} purchases records between {1} and {2}'.format(
+logger.info('Retained {0:,} purchase records between {1} and {2}'.format(
     len(purchase),
     min(p['I_DATE'] for p in purchase.values()),
     max(p['I_DATE'] for p in purchase.values())))
@@ -542,7 +542,7 @@ class AvailabilityFeatureSet:
 class UserPurchaseHistoryFeatureSet:
     def names(self):
         return(
-#            'number_of_purchases',
+            'number_of_purchases',
             'number_of_genre_purchases',
             'number_of_capsule_purchases',
 
@@ -560,17 +560,17 @@ class UserPurchaseHistoryFeatureSet:
             'recency_capsule_purchase',
 
             'recency_small_area_purchase',
-#            'recency_large_area_purchase',
+            'recency_large_area_purchase',
             'recency_ken_purchase',
 
             'percent_from_genre_purchase',
             'percent_from_capsule_purchase',
 
-#            'centered_discount_price',
-#            'centered_price_rate',
+            'centered_discount_price',
+            'centered_price_rate',
 
             'relative_to_previous_discount_price_purchase',
-#            'relative_to_previous_price_rate_purchase',
+            'relative_to_previous_price_rate_purchase',
 
             'relative_to_max_discount_price',
             'relative_to_min_price_rate',
@@ -580,9 +580,9 @@ class UserPurchaseHistoryFeatureSet:
             'max_qty_genre',
             'max_qty_capsule',
 
-#            'max_qty_ken',
-#            'max_qty_large_area',
-#            'max_qty_small_area',
+            'max_qty_ken',
+            'max_qty_large_area',
+            'max_qty_small_area',
         )
 
     def map(self, user_history, coupon, date):
@@ -651,7 +651,7 @@ class UserPurchaseHistoryFeatureSet:
         days_since_purchase = (date - last_purchase).total_seconds()/86400.0
 
         result = (
-#            purchase_count,
+            purchase_count,
             genre_count,
             capsule_count,
 
@@ -669,17 +669,17 @@ class UserPurchaseHistoryFeatureSet:
             days_since_capsule - days_since_purchase,
 
             days_since_small_area_name - days_since_purchase,
-#            days_since_large_area_name - days_since_purchase,
+            days_since_large_area_name - days_since_purchase,
             days_since_ken_name - days_since_purchase,
 
             float(genre_count) / purchase_count if purchase_count > 0 else -999,
             float(capsule_count) / purchase_count if purchase_count > 0 else -999,
 
-#            coupon['DISCOUNT_PRICE'] - float(sum_discount_price)/ purchase_count if purchase_count > 0 else -999,
-#            coupon['PRICE_RATE'] - float(sum_price_rate)/ purchase_count if purchase_count > 0 else -999,
+            coupon['DISCOUNT_PRICE'] - float(sum_discount_price)/ purchase_count if purchase_count > 0 else -999,
+            coupon['PRICE_RATE'] - float(sum_price_rate)/ purchase_count if purchase_count > 0 else -999,
 
             coupon['DISCOUNT_PRICE'] - discount_price,
-#            coupon['PRICE_RATE'] - price_rate,
+            coupon['PRICE_RATE'] - price_rate,
 
             coupon['DISCOUNT_PRICE'] - max_discount_price,
             coupon['PRICE_RATE'] - min_price_rate,
@@ -689,9 +689,9 @@ class UserPurchaseHistoryFeatureSet:
             max_qty_genre,
             max_qty_capsule,
 
-#            max_qty_ken,
-#            max_qty_large_area,
-#            max_qty_small_area,
+            max_qty_ken,
+            max_qty_large_area,
+            max_qty_small_area,
         )
 
         return result
@@ -716,7 +716,7 @@ class UserVisitHistoryFeatureSet:
             'recency_capsule_visit',
 
             'recency_small_area_visit',
-#            'recency_large_area_visit',
+            'recency_large_area_visit',
             'recency_ken_visit',
             
 #            'days_since_coupon_visit',
@@ -808,7 +808,7 @@ class UserVisitHistoryFeatureSet:
             days_since_capsule - days_since_visit,
 
             days_since_small_area_name - days_since_visit,
-#            days_since_large_area_name - days_since_visit,
+            days_since_large_area_name - days_since_visit,
             days_since_ken_name - days_since_visit,
 
 #            days_since_coupon,
@@ -828,7 +828,7 @@ class SimpleUserFeatureSet:
     def names(self):
         return (
             'age',
-#            'gender',
+            'gender',
             'prefecture',
             'days_as_member')
 
@@ -836,7 +836,7 @@ class SimpleUserFeatureSet:
         user = user_history['user']
         return (
             user['AGE'],
-#            gender_encoder.map(user['SEX_ID']),
+            gender_encoder.map(user['SEX_ID']),
             prefecture_encoder.map(user['PREF_NAME']),
             (date - user['REG_DATE']).total_seconds()/86400.0
         )
@@ -946,15 +946,15 @@ class NBFeatureSet:
             
             'small_area_visit_history_nb',
             'large_area_visit_history_nb',
-#            'ken_visit_history_nb',
+            'ken_visit_history_nb',
             'capsule_visit_history_nb',
             'genre_visit_history_nb',
             
             'small_area_purchase_history_nb',
-#            'large_area_purchase_history_nb',
-#            'ken_purchase_history_nb',
-#            'capsule_text_purchase_history_nb',
-#            'genre_name_purchase_history_nb',
+            'large_area_purchase_history_nb',
+            'ken_purchase_history_nb',
+            'capsule_text_purchase_history_nb',
+            'genre_name_purchase_history_nb',
 
             'qtz_price_rate_visit_history_mn',
             'qtz_discount_price_visit_history_mn',
@@ -980,15 +980,15 @@ class NBFeatureSet:
             
             accumulators[8].score(coupon, user_history, date),
             accumulators[9].score(coupon, user_history, date),
-#            accumulators[10].score(coupon, user_history, date),
+            accumulators[10].score(coupon, user_history, date),
             accumulators[11].score(coupon, user_history, date),
             accumulators[12].score(coupon, user_history, date),
             
             accumulators[13].score(coupon, user_history, date),
-#            accumulators[14].score(coupon, user_history, date),
-#            accumulators[15].score(coupon, user_history, date),
-#            accumulators[16].score(coupon, user_history, date),
-#            accumulators[17].score(coupon, user_history, date),
+            accumulators[14].score(coupon, user_history, date),
+            accumulators[15].score(coupon, user_history, date),
+            accumulators[16].score(coupon, user_history, date),
+            accumulators[17].score(coupon, user_history, date),
 
             accumulators[18].score(coupon, user_history, date),
             accumulators[19].score(coupon, user_history, date),
@@ -1009,7 +1009,7 @@ feature_extractors = (
     SimpleUserFeatureSet(),
     SimpleCouponFeatureSet(),
     CouponUsableDateFeatureSet(),
-#    JointFeatureSet(),   # This is just distance.
+#   JointFeatureSet(),   # This is just distance.
     RandomFeatureSet()
 )
 
@@ -1080,25 +1080,33 @@ saw_a_one = False
 
 logger.info ('User space is {0} users'.format(len(user_history_list)))
 
-while len(purchase_sample) + nonpurchase_count < N:
-    random_user_history = user_history_list[random_state.randrange(len(user_history_list))]
+accessibility_misses = purchase_misses =0
+for i in range(N-len(purchase_sample)):
+    random_purchase = purchase_sample[random_state.randrange(len(purchase_sample))]
+    purchasing_user = random_purchase['USER']
+    purchasing_user_hash = purchasing_user['USER_ID_hash']
+    purchase_week_start = start_of_week(random_purchase['I_DATE'])
+    purchase_week_index = week_index(purchase_week_start)
+    
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
-    random_user = random_user_history['user']
+    while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
+           (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
+        random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
+        if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
+            accessibility_misses += 1
+        else:
+            purchase_misses += 1
+            
+    f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
+    sample_features.append(f)
 
-    random_week_index = random.randrange(train_period_in_weeks)
-    random_week_start = train_start_date + datetime.timedelta(days=7*random_week_index)
-
-    if days_accessible(random_user, random_coupon, random_week_start) > 0:
-        result = purchase_by_user_coupon_week.get((random_user['USER_ID_hash'], random_coupon['COUPON_ID_hash'], random_week_index), 0)
-        if result == 0:
-            f = features(random_user_history, random_coupon, random_week_start)
-            sample_features.append(f)
-            nonpurchase_count += 1
+logger.info('Misses due to accessibility: {0}; misses due to purchase {1}'.format(accessibility_misses, purchase_misses))
+    
 
 # Let garbage collector work
 del purchase_by_user_coupon_week
             
-sample_outcomes = len(purchase_sample) * [1.0] + nonpurchase_count * [0.0]
+sample_outcomes = len(purchase_sample) * [1.0] + (N-len(purchase_sample)) * [0.0]
 
 features_and_outcomes = list(zip(sample_features,sample_outcomes))
 random_state.shuffle(features_and_outcomes)
