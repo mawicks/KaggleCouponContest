@@ -16,13 +16,13 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-p_frac = 0.50 # Fraction of training cases that should be positive
-#N = 250000
-N = 160000
+p_frac = 0.32 # Fraction of training cases that should be positive
+N = 250000
+#N = 160000
 # n_estimators = 4000
 n_estimators = 4000
-min_samples_leaf = 1 + int(N/4000)
-# min_samples_leaf = 5
+# min_samples_leaf = 1 + int(N/4000)
+min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
 oob_score=False
@@ -35,8 +35,8 @@ classifier_random_state = numpy.random.RandomState(seed=seed)
 
 
 # Important constants
-# train_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
-train_start_date = datetime.datetime(year=2012, month=1, day=1, hour=0, minute=0)
+train_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
+# train_start_date = datetime.datetime(year=2012, month=1, day=1, hour=0, minute=0)
 test_week_start_date = datetime.datetime(year=2012, month=6, day=24)
 
 train_period_in_weeks = (test_week_start_date - train_start_date).days // 7 
@@ -902,11 +902,13 @@ class JointFeatureSet:
 accumulators = (
     naive_bayes.MultinomialNBAccumulator('visit', 'small_area_name'),
     naive_bayes.MultinomialNBAccumulator('visit', 'large_area_name'),
+    naive_bayes.MultinomialNBAccumulator('visit', 'ken_name'),
     naive_bayes.MultinomialNBAccumulator('visit', 'CAPSULE_TEXT'),
     naive_bayes.MultinomialNBAccumulator('visit', 'GENRE_NAME'),
 
     naive_bayes.MultinomialNBAccumulator('purchase', 'small_area_name'),
     naive_bayes.MultinomialNBAccumulator('purchase', 'large_area_name'),
+    naive_bayes.MultinomialNBAccumulator('purchase', 'ken_name'),
     naive_bayes.MultinomialNBAccumulator('purchase', 'CAPSULE_TEXT'),
     naive_bayes.MultinomialNBAccumulator('purchase', 'GENRE_NAME'),
     
@@ -936,11 +938,13 @@ class NBFeatureSet:
         return (
             'small_area_visit_history_mn',
             'large_area_visit_history_mn',
+            'ken_visit_history_mn',
             'capsule_visit_history_mn',
             'genre_visit_history_mn',
 
             'small_area_purchase_history_mn',
             'large_area_purchase_history_mn',
+            'ken_purchase_history_mn',
             'capsule_purchase_history_mn',
             'genre_purchase_history_mn',
             
@@ -972,31 +976,33 @@ class NBFeatureSet:
             accumulators[1].score(coupon, user_history, date),
             accumulators[2].score(coupon, user_history, date),
             accumulators[3].score(coupon, user_history, date),
-            
             accumulators[4].score(coupon, user_history, date),
+            
             accumulators[5].score(coupon, user_history, date),
             accumulators[6].score(coupon, user_history, date),
             accumulators[7].score(coupon, user_history, date),
-            
             accumulators[8].score(coupon, user_history, date),
             accumulators[9].score(coupon, user_history, date),
+            
             accumulators[10].score(coupon, user_history, date),
             accumulators[11].score(coupon, user_history, date),
             accumulators[12].score(coupon, user_history, date),
-            
             accumulators[13].score(coupon, user_history, date),
             accumulators[14].score(coupon, user_history, date),
+            
             accumulators[15].score(coupon, user_history, date),
             accumulators[16].score(coupon, user_history, date),
             accumulators[17].score(coupon, user_history, date),
-
             accumulators[18].score(coupon, user_history, date),
             accumulators[19].score(coupon, user_history, date),
-            accumulators[20].score(coupon, user_history, date),
 
+            accumulators[20].score(coupon, user_history, date),
             accumulators[21].score(coupon, user_history, date),
             accumulators[22].score(coupon, user_history, date),
+
             accumulators[23].score(coupon, user_history, date),
+            accumulators[24].score(coupon, user_history, date),
+            accumulators[25].score(coupon, user_history, date),
 
         )
     
