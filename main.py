@@ -16,9 +16,8 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-p_frac = 0.32 # Fraction of training cases that should be positive
-N = 250000
-#N = 160000
+NPP=2 # Negative training cases per positive cases.
+n_positive = 80000 # Number of postive training cases.
 # n_estimators = 4000
 n_estimators = 4000
 # min_samples_leaf = 1 + int(N/4000)
@@ -26,7 +25,6 @@ min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
 oob_score=False
-n_positive = int(p_frac*N)
 seed=12345678
 
 # Random number seeds
@@ -253,13 +251,12 @@ def prefecture_distance(pref1, pref2):
     return result
 
 logger.info('Parameters: '
-            'N: {0:,}, '
-            'p_frac: {1:5.3f} ({2:,} pos cases), '
-            'n_estimators: {3:,}, '
-            'min_samples_leaf: {4}, '
-            'max_features: {5}, '
-            'n_jobs: {6}'.format(N,
-                                 p_frac,
+            'NPP: {0:,}, '
+            'n_positive: {1:,}, '
+            'n_estimators: {2:,}, '
+            'min_samples_leaf: {3}, '
+            'max_features: {4}, '
+            'n_jobs: {5}'.format(NPP,
                                  n_positive,
                                  n_estimators,
                                  min_samples_leaf,
@@ -1051,8 +1048,6 @@ purchase_sample = random_state.sample(tuple(purchase.values()), n_positive)
 # Let garbage collector work
 del purchase        
 
-sample_features = []
-
 logger.info('Accumulating stats for Naive Bayes in random sample')
 
 for p in purchase_sample:
@@ -1071,14 +1066,16 @@ print('End of dump')
     
 logger.info('Building features for random sample')
 
+positive_features = []
+positive_users = []
+positive_coupons = []
 for p in purchase_sample:
     uh  = user_history[p['USER']['USER_ID_hash']]
 
     f = features(uh, p['COUPON'], start_of_week(p['I_DATE']))
-    sample_features.append(f)
-
-
-nonpurchase_sample = []
+    positive_features.append(f)
+    positive_users.append(p['USER']['USER_ID_hash'])
+    positive_coupons.append(p['COUPON']['COUPON_ID_hash'])
 
 logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
@@ -1086,25 +1083,30 @@ saw_a_one = False
 
 logger.info ('User space is {0} users'.format(len(user_history_list)))
 
-accessibility_misses = purchase_misses =0
-for i in range(N-len(purchase_sample)):
-    random_purchase = purchase_sample[random_state.randrange(len(purchase_sample))]
-    purchasing_user = random_purchase['USER']
+negative_features = []
+negative_users = []
+negative_coupons = []
+accessibility_misses = purchase_misses = 0
+for p in purchase_sample:
+    purchasing_user = p['USER']
     purchasing_user_hash = purchasing_user['USER_ID_hash']
-    purchase_week_start = start_of_week(random_purchase['I_DATE'])
+    purchase_week_start = start_of_week(p['I_DATE'])
     purchase_week_index = week_index(purchase_week_start)
-    
-    random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
-    while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
-           (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
+
+    for i in range(NPP):
         random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
-        if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
-            accessibility_misses += 1
-        else:
-            purchase_misses += 1
+        while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
+               (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
+            random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
+            if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
+                accessibility_misses += 1
+            else:
+                purchase_misses += 1
             
-    f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
-    sample_features.append(f)
+        f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
+        negative_features.append(f)
+        negative_users.append(purchasing_user_hash)
+        negative_coupons.append(random_coupon['COUPON_ID_hash'])
 
 logger.info('Misses due to accessibility: {0}; misses due to purchase {1}'.format(accessibility_misses, purchase_misses))
     
@@ -1112,15 +1114,19 @@ logger.info('Misses due to accessibility: {0}; misses due to purchase {1}'.forma
 # Let garbage collector work
 del purchase_by_user_coupon_week
             
-sample_outcomes = len(purchase_sample) * [1.0] + (N-len(purchase_sample)) * [0.0]
+positive_train_size = (2*n_positive) // 3
+train_features = positive_features[:positive_train_size] + negative_features[:NPP*positive_train_size]
+train_outcomes = positive_train_size * [1] + NPP*positive_train_size * [0]
+train_users = positive_users[:positive_train_size] + negative_users[:NPP*positive_train_size]
+train_coupons = positive_coupons[:positive_train_size] + negative_coupons[:NPP*positive_train_size]
 
-features_and_outcomes = list(zip(sample_features,sample_outcomes))
-random_state.shuffle(features_and_outcomes)
+positive_test_size = n_positive - positive_train_size
+test_features = positive_features[positive_train_size:] + negative_features[NPP*positive_train_size:]
+test_outcomes = positive_test_size * [1] + NPP*positive_test_size * [0]
+test_users = positive_users[positive_train_size:] + negative_users[NPP*positive_train_size:]
+test_coupons = positive_coupons[positive_train_size:] + negative_coupons[NPP*positive_train_size:]
 
-train_size = (2*N) // 3
-train_features,train_outcomes = zip(*features_and_outcomes[0:train_size])
-test_features,test_outcomes = zip(*features_and_outcomes[train_size:])
-del features_and_outcomes
+logger.info('{0} training cases; {1} test cases'.format(len(train_features), len(test_features)))
 
 for name, regressor in regressors:
     logger.info('Training {0}: {1}'.format(name, regressor))
@@ -1142,10 +1148,10 @@ for name, regressor in regressors:
 logger.info('Writing test data')
 with open('features.csv', "w") as feature_output:
     feature_writer = csv.writer(feature_output)
-    feature_writer.writerow(tuple(feature_names + ('prediction', 'outcome')))
+    feature_writer.writerow(tuple(('USER_ID_hash','COUPON_ID_hash') + feature_names + ('prediction', 'outcome')))
     
-    for feature, outcome, prediction in zip(test_features, test_outcomes, test_predictions):
-        feature_writer.writerow(feature + (prediction, outcome))
+    for user, coupon, feature, outcome, prediction in zip(test_users, test_coupons, test_features, test_outcomes, test_predictions):
+        feature_writer.writerow((user,coupon) + feature + (prediction, outcome))
 
 logger.info('Scoring and writing output file.')
 
