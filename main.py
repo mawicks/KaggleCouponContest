@@ -16,12 +16,12 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-NPP=3 # Negative training cases per positive cases.
-n_positive = 60000 # Number of postive training cases.
+NPP=2 # Negative training cases per positive cases.
+n_positive = 80000 # Number of postive training cases.
 # n_estimators = 4000
 n_estimators = 4000
 # min_samples_leaf = 1 + int(N/4000)
-min_samples_leaf = 5
+min_samples_leaf = 15
 max_features = 9
 n_jobs=-1
 oob_score=False
