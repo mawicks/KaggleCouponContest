@@ -1,4 +1,6 @@
 *.csv
+*.log
+*.pyc
 *~
 Zip
 documentation

@@ -7,6 +7,7 @@ import itertools
 import logging
 import operator
 import naive_bayes
+import naive_bayes_wrapper
 import math
 import numpy
 import random
@@ -18,10 +19,11 @@ import sys
 # Tunable parameters
 NPP=2 # Negative training cases per positive cases.
 n_positive = 80000 # Number of postive training cases.
+n_positive = 100
 # n_estimators = 4000
-n_estimators = 4000
+n_estimators = 100
 # min_samples_leaf = 1 + int(N/4000)
-min_samples_leaf = 3
+min_samples_leaf = 7
 max_features = 9
 n_jobs=-1
 oob_score=False
@@ -620,26 +622,27 @@ class UserPurchaseHistoryFeatureSet:
                 sum_price_rate += price_rate
 
                 item_count = p['ITEM_COUNT']
+                purchased_coupon = p['COUPON']
 
-                if p['COUPON']['GENRE_NAME'] == coupon['GENRE_NAME']:
+                if purchased_coupon['GENRE_NAME'] == coupon['GENRE_NAME']:
                     genre_count += 1
                     days_since_genre = min(days_since_genre, days)
                     max_qty_genre = max(max_qty_genre, item_count)
 
-                if p['COUPON']['CAPSULE_TEXT'] == coupon['CAPSULE_TEXT']:
+                if purchased_coupon['CAPSULE_TEXT'] == coupon['CAPSULE_TEXT']:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
                     max_qty_capsule = max(max_qty_capsule, item_count)
 
-                if p['COUPON']['small_area_name'] == coupon['small_area_name']:
+                if purchased_coupon['small_area_name'] == coupon['small_area_name']:
                     days_since_small_area_name = min(days_since_small_area_name, days)
                     max_qty_small_area = max(max_qty_small_area, item_count)
 
-                if p['COUPON']['large_area_name'] == coupon['large_area_name']:
+                if purchased_coupon['large_area_name'] == coupon['large_area_name']:
                     days_since_large_area_name = min(days_since_large_area_name, days)
                     max_qty_large_area = max(max_qty_large_area, item_count)
 
-                if p['COUPON']['ken_name'] == coupon['ken_name']:
+                if purchased_coupon['ken_name'] == coupon['ken_name']:
                     days_since_ken_name = min(days_since_ken_name, days)
                     max_qty_ken = max(max_qty_ken, item_count)
 
@@ -762,24 +765,26 @@ class UserVisitHistoryFeatureSet:
                 dow = v['I_DATE'].weekday()
                 dow_count[dow] = dow_count.get(dow, 0) + 1
 
-                if v['COUPON']['GENRE_NAME'] == coupon['GENRE_NAME']:
+                visited_coupon = v['COUPON']
+
+                if visited_coupon['GENRE_NAME'] == coupon['GENRE_NAME']:
                     genre_count += 1
                     days_since_genre = min(days_since_genre, days)
 
-                if v['COUPON']['CAPSULE_TEXT'] == coupon['CAPSULE_TEXT']:
+                if visited_coupon['CAPSULE_TEXT'] == coupon['CAPSULE_TEXT']:
                     capsule_count += 1
                     days_since_capsule = min(days_since_capsule, days)
 
-                if v['COUPON']['small_area_name'] == coupon['small_area_name']:
+                if visited_coupon['small_area_name'] == coupon['small_area_name']:
                     days_since_small_area_name = min(days_since_small_area_name, days)
 
-                if v['COUPON']['large_area_name'] == coupon['large_area_name']:
+                if visited_coupon['large_area_name'] == coupon['large_area_name']:
                     days_since_large_area_name = min(days_since_large_area_name, days)
 
-                if v['COUPON']['ken_name'] == coupon['ken_name']:
+                if visited_coupon['ken_name'] == coupon['ken_name']:
                     days_since_ken_name = min(days_since_ken_name, days)
 
-                if v['COUPON']['COUPON_ID_hash'] == coupon['COUPON_ID_hash']:
+                if visited_coupon['COUPON_ID_hash'] == coupon['COUPON_ID_hash']:
                     days_since_coupon = min(days_since_coupon, days)
 
         if len(hour_count) > 0:
@@ -897,37 +902,37 @@ class JointFeatureSet:
 
 # dump(user_history)
 accumulators = (
-    naive_bayes.MultinomialNBAccumulator('visit', 'small_area_name'),
-    naive_bayes.MultinomialNBAccumulator('visit', 'large_area_name'),
-    naive_bayes.MultinomialNBAccumulator('visit', 'ken_name'),
-    naive_bayes.MultinomialNBAccumulator('visit', 'CAPSULE_TEXT'),
-    naive_bayes.MultinomialNBAccumulator('visit', 'GENRE_NAME'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'small_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'large_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'ken_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'GENRE_NAME'),
 
-    naive_bayes.MultinomialNBAccumulator('purchase', 'small_area_name'),
-    naive_bayes.MultinomialNBAccumulator('purchase', 'large_area_name'),
-    naive_bayes.MultinomialNBAccumulator('purchase', 'ken_name'),
-    naive_bayes.MultinomialNBAccumulator('purchase', 'CAPSULE_TEXT'),
-    naive_bayes.MultinomialNBAccumulator('purchase', 'GENRE_NAME'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'small_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'large_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'ken_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'GENRE_NAME'),
     
-    naive_bayes.NBAccumulator('visit', 'small_area_name'),
-    naive_bayes.NBAccumulator('visit', 'large_area_name'),
-    naive_bayes.NBAccumulator('visit', 'ken_name'),
-    naive_bayes.NBAccumulator('visit', 'CAPSULE_TEXT'),
-    naive_bayes.NBAccumulator('visit', 'GENRE_NAME'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'small_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'large_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'ken_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'GENRE_NAME'),
     
-    naive_bayes.NBAccumulator('purchase', 'small_area_name'),
-    naive_bayes.NBAccumulator('purchase', 'large_area_name'),
-    naive_bayes.NBAccumulator('purchase', 'ken_name'),
-    naive_bayes.NBAccumulator('purchase', 'CAPSULE_TEXT'),
-    naive_bayes.NBAccumulator('purchase', 'GENRE_NAME'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'small_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'large_area_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'ken_name'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'GENRE_NAME'),
 
-    naive_bayes.MultinomialNBAccumulator('visit', 'QUANTIZED_PRICE_RATE'),
-    naive_bayes.MultinomialNBAccumulator('visit', 'QUANTIZED_DISCOUNT_PRICE'),
-    naive_bayes.MultinomialNBAccumulator('visit', 'QUANTIZED_CATALOG_PRICE'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'QUANTIZED_CATALOG_PRICE'),
     
-    naive_bayes.MultinomialNBAccumulator('purchase', 'QUANTIZED_PRICE_RATE'),
-    naive_bayes.MultinomialNBAccumulator('purchase', 'QUANTIZED_DISCOUNT_PRICE'),
-    naive_bayes.MultinomialNBAccumulator('purchase', 'QUANTIZED_CATALOG_PRICE'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'QUANTIZED_CATALOG_PRICE'),
 )
 
 class NBFeatureSet:
@@ -1070,12 +1075,14 @@ positive_features = []
 positive_users = []
 positive_coupons = []
 for p in purchase_sample:
+    purchased_coupon = p['COUPON']
+    
     uh  = user_history[p['USER']['USER_ID_hash']]
 
-    f = features(uh, p['COUPON'], start_of_week(p['I_DATE']))
+    f = features(uh, purchased_coupon, start_of_week(p['I_DATE']))
     positive_features.append(f)
     positive_users.append(p['USER']['USER_ID_hash'])
-    positive_coupons.append(p['COUPON']['COUPON_ID_hash'])
+    positive_coupons.append(purchased_coupon['COUPON_ID_hash'])
 
 logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 nonpurchase_count = 0
