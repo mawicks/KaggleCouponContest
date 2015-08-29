@@ -290,6 +290,10 @@ def coupon_computed_fields(coupon_list):
 coupon = read_file('coupon_list_train.csv', 'COUPON_ID_hash')
 coupon_computed_fields(coupon)
 
+coupon_test = read_file('coupon_list_test.csv', 'COUPON_ID_hash')
+coupon_computed_fields(coupon_test)
+
+coupon.update(coupon_test)
 
 for c in list(itertools.islice(coupon.values(), 0, 3)):
     logger.info('Sample coupon: {0}'.format(c))
@@ -902,37 +906,37 @@ class JointFeatureSet:
 
 # dump(user_history)
 accumulators = (
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'small_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'large_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'ken_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME'),
 
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'small_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'large_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'ken_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'GENRE_NAME'),
     
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'small_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'large_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'ken_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'visit', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME'),
     
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'small_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'large_area_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'ken_name'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.BNStrategy(), 'purchase', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'GENRE_NAME'),
 
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'QUANTIZED_PRICE_RATE'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'QUANTIZED_DISCOUNT_PRICE'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'visit', 'QUANTIZED_CATALOG_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_CATALOG_PRICE'),
     
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'QUANTIZED_PRICE_RATE'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'QUANTIZED_DISCOUNT_PRICE'),
-    naive_bayes_wrapper.Wrapper(naive_bayes.MNStrategy(), 'purchase', 'QUANTIZED_CATALOG_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_CATALOG_PRICE'),
 )
 
 class NBFeatureSet:
@@ -973,38 +977,40 @@ class NBFeatureSet:
         )
     
     def map(self, user_history, coupon, date):
+        user_hash = user_history['user']['USER_ID_hash']
+        coupon_hash = coupon['COUPON_ID_hash']
         return (
-            accumulators[0].score(coupon, user_history, date),
-            accumulators[1].score(coupon, user_history, date),
-            accumulators[2].score(coupon, user_history, date),
-            accumulators[3].score(coupon, user_history, date),
-            accumulators[4].score(coupon, user_history, date),
+            accumulators[0].score(coupon_hash, user_hash, date),
+            accumulators[1].score(coupon_hash, user_hash, date),
+            accumulators[2].score(coupon_hash, user_hash, date),
+            accumulators[3].score(coupon_hash, user_hash, date),
+            accumulators[4].score(coupon_hash, user_hash, date),
             
-            accumulators[5].score(coupon, user_history, date),
-            accumulators[6].score(coupon, user_history, date),
-            accumulators[7].score(coupon, user_history, date),
-            accumulators[8].score(coupon, user_history, date),
-            accumulators[9].score(coupon, user_history, date),
+            accumulators[5].score(coupon_hash, user_hash, date),
+            accumulators[6].score(coupon_hash, user_hash, date),
+            accumulators[7].score(coupon_hash, user_hash, date),
+            accumulators[8].score(coupon_hash, user_hash, date),
+            accumulators[9].score(coupon_hash, user_hash, date),
             
-            accumulators[10].score(coupon, user_history, date),
-            accumulators[11].score(coupon, user_history, date),
-            accumulators[12].score(coupon, user_history, date),
-            accumulators[13].score(coupon, user_history, date),
-            accumulators[14].score(coupon, user_history, date),
+            accumulators[10].score(coupon_hash, user_hash, date),
+            accumulators[11].score(coupon_hash, user_hash, date),
+            accumulators[12].score(coupon_hash, user_hash, date),
+            accumulators[13].score(coupon_hash, user_hash, date),
+            accumulators[14].score(coupon_hash, user_hash, date),
             
-            accumulators[15].score(coupon, user_history, date),
-            accumulators[16].score(coupon, user_history, date),
-            accumulators[17].score(coupon, user_history, date),
-            accumulators[18].score(coupon, user_history, date),
-            accumulators[19].score(coupon, user_history, date),
+            accumulators[15].score(coupon_hash, user_hash, date),
+            accumulators[16].score(coupon_hash, user_hash, date),
+            accumulators[17].score(coupon_hash, user_hash, date),
+            accumulators[18].score(coupon_hash, user_hash, date),
+            accumulators[19].score(coupon_hash, user_hash, date),
 
-            accumulators[20].score(coupon, user_history, date),
-            accumulators[21].score(coupon, user_history, date),
-            accumulators[22].score(coupon, user_history, date),
+            accumulators[20].score(coupon_hash, user_hash, date),
+            accumulators[21].score(coupon_hash, user_hash, date),
+            accumulators[22].score(coupon_hash, user_hash, date),
 
-            accumulators[23].score(coupon, user_history, date),
-            accumulators[24].score(coupon, user_history, date),
-            accumulators[25].score(coupon, user_history, date),
+            accumulators[23].score(coupon_hash, user_hash, date),
+            accumulators[24].score(coupon_hash, user_hash, date),
+            accumulators[25].score(coupon_hash, user_hash, date),
 
         )
     
@@ -1056,9 +1062,9 @@ del purchase
 logger.info('Accumulating stats for Naive Bayes in random sample')
 
 for p in purchase_sample:
-    uh  = user_history[p['USER']['USER_ID_hash']]
+    user_hash = p['USER']['USER_ID_hash']
     for a in accumulators:
-        a.add(p, uh)
+        a.add(p, user_hash)
 
 accumulators[18].dump(10)
 accumulators[19].dump(10)
@@ -1162,8 +1168,6 @@ with open('features.csv', "w") as feature_output:
 
 logger.info('Scoring and writing output file.')
 
-coupon_test = read_file('coupon_list_test.csv', 'COUPON_ID_hash')
-coupon_computed_fields(coupon_test)
 
 KEEP = 10
 with open("submission.csv", "w") as outputfile, \
