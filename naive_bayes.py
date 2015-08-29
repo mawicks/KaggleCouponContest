@@ -253,10 +253,18 @@ class MultinomialNBAccumulator:
 if __name__ == "__main__":
 
     import collections
-    Coupon = collections.namedtuple('Coupon', ['city'])
-    Visit = collections.namedtuple('Visit', ['VIEW_COUPON_ID_hash', 'I_DATE'])
-    Purchase = collections.namedtuple('Purchase', ['COUPON_ID_hash', 'I_DATE'])
-    History = collections.namedtuple('History', ['visit'])
+
+    def Coupon(city):
+        return { 'city': city }
+
+    def Visit(coupon, date):
+        return { 'COUPON': coupon, 'I_DATE': date }
+
+    def Purchase(coupon, date):
+        return { 'COUPON': coupon, 'I_DATE': date }
+
+    def History(visit):
+        return { 'visit': visit }
 
     coupon_arlington = Coupon('Arlington')
     coupon_alexandria = Coupon('Alexandria')
