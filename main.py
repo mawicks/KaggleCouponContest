@@ -19,11 +19,9 @@ import sys
 # Tunable parameters
 NPP=2 # Negative training cases per positive cases.
 n_positive = 80000 # Number of postive training cases.
-n_positive = 100
-# n_estimators = 4000
-n_estimators = 100
+n_estimators = 4000
 # min_samples_leaf = 1 + int(N/4000)
-min_samples_leaf = 7
+min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
 oob_score=False
@@ -115,7 +113,7 @@ regressors = (
 regressors = regressors[0:1]
 
 def week_index(date):
-    return int((date - train_start_date).days / 7)
+    return int((date - train_start_date).days / 7.0)
 
 def start_of_week(date):
     return train_start_date + week_index(date)*datetime.timedelta(days=7)

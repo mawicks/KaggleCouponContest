@@ -1,4 +1,5 @@
 import datetime
+import functools
 import naive_bayes
 import operator
 
@@ -29,7 +30,7 @@ class CacheableWrapper:
                                                               self.coupon_index,
                                                               self.purchase_or_visit,
                                                               self.field_name)
-
+    @functools.lru_cache(maxsize=256)
     def accumulate_history(self, user_hash, date):
         history = {}
         for history_item in self.history_getter(self.user_history_index[user_hash]):
@@ -48,11 +49,14 @@ class CacheableWrapper:
 
         self.estimator.dump(limit)
 
+    @functools.lru_cache(maxsize=256)
+    def __score(self, candidate_field_value, user_hash, date):
+        history_set = self.accumulate_history(user_hash, date)
+        return self.estimator.score(candidate_field_value, history_set)
+                                    
     def score (self, coupon_hash, user_hash, date):
         candidate_field_value = self.field_getter(self.coupon_index[coupon_hash])
-        history_set = self.accumulate_history(user_hash, date)
-
-        return self.estimator.score(candidate_field_value, history_set)
+        return self.__score(candidate_field_value, user_hash, date)
     
 class Wrapper:
     """Naive Bayes Wrapper"""
