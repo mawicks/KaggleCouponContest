@@ -20,7 +20,7 @@ class CacheableWrapper:
         self.field_name = field_name
 
         self.history_getter = operator.itemgetter(purchase_or_visit)
-        self.field_getter = operator.itemgetter(field_name)
+        self.class_getter = operator.itemgetter(field_name)
 
         self.estimator = naive_bayes.Estimator(strategy)
         
@@ -35,14 +35,14 @@ class CacheableWrapper:
         history = {}
         for history_item in self.history_getter(self.user_history_index[user_hash]):
             if history_item['I_DATE'] < date:
-                fv = self.field_getter(history_item['COUPON'])
+                fv = self.class_getter(history_item['COUPON'])
                 history[fv] = history.get(fv, 0) + 1
         return history
 
     def add (self, purchase, user_hash):
-        field_value = self.field_getter(purchase['COUPON'])
+        class_value = self.class_getter(purchase['COUPON'])
         history_set = self.accumulate_history(user_hash, purchase['I_DATE'])
-        self.estimator.add(field_value, history_set)
+        self.estimator.add(class_value, history_set)
                 
     def dump (self, limit=None):
         print ('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
@@ -50,13 +50,13 @@ class CacheableWrapper:
         self.estimator.dump(limit)
 
     @functools.lru_cache(maxsize=256)
-    def __score(self, candidate_field_value, user_hash, date):
+    def __score(self, candidate_class_value, user_hash, date):
         history_set = self.accumulate_history(user_hash, date)
-        return self.estimator.score(candidate_field_value, history_set)
+        return self.estimator.score(candidate_class_value, history_set)
                                     
     def score (self, coupon_hash, user_hash, date):
-        candidate_field_value = self.field_getter(self.coupon_index[coupon_hash])
-        return self.__score(candidate_field_value, user_hash, date)
+        candidate_class_value = self.class_getter(self.coupon_index[coupon_hash])
+        return self.__score(candidate_class_value, user_hash, date)
     
 class Wrapper:
     """Naive Bayes Wrapper"""
@@ -70,7 +70,7 @@ class Wrapper:
         self.purchase_or_visit = purchase_or_visit
 
         self.history_getter = operator.itemgetter(purchase_or_visit)
-        self.field_getter = operator.itemgetter(field_name)
+        self.class_getter = operator.itemgetter(field_name)
 
         self.estimator = naive_bayes.Estimator(strategy)
         
@@ -81,17 +81,17 @@ class Wrapper:
         history = {}
         for history_item in history_list:
             if history_item['I_DATE'] < date:
-                fv = self.field_getter(history_item['COUPON'])
+                fv = self.class_getter(history_item['COUPON'])
                 history[fv] = history.get(fv, 0) + 1
         return history
             
     def add (self, purchase, user_history):
-        field_value = self.field_getter(purchase['COUPON'])
+        class_value = self.class_getter(purchase['COUPON'])
 
         history_list = self.history_getter(user_history)
         history_set = self.accumulate_history(history_list, purchase['I_DATE'])
 
-        self.estimator.add(field_value, history_set)
+        self.estimator.add(class_value, history_set)
                 
     def dump (self, limit=None):
         print ('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
@@ -99,12 +99,12 @@ class Wrapper:
         self.estimator.dump(limit)
 
     def score (self, coupon, user_history, date):
-        candidate_field_value = self.field_getter(coupon)
+        candidate_class_value = self.class_getter(coupon)
 
         history_list = self.history_getter(user_history)
         history_set = self.accumulate_history(history_list, date)
 
-        return self.estimator.score(candidate_field_value, history_set)
+        return self.estimator.score(candidate_class_value, history_set)
         
 if __name__ == "__main__":
 
