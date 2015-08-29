@@ -1074,7 +1074,6 @@ accumulators[23].dump(10)
 print('End of dump')
     
 logger.info('Building features for random sample')
-
 positive_features = []
 positive_users = []
 positive_coupons = []
@@ -1088,11 +1087,8 @@ for p in purchase_sample:
     positive_users.append(p['USER']['USER_ID_hash'])
     positive_coupons.append(purchased_coupon['COUPON_ID_hash'])
 
-logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
-nonpurchase_count = 0
-saw_a_one = False
-
 logger.info ('User space is {0} users'.format(len(user_history_list)))
+logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 
 negative_features = []
 negative_users = []
