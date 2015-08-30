@@ -18,7 +18,7 @@ import sys
 
 # Tunable parameters
 N = 270000
-frac_positive = 0.30
+frac_positive = 0.35
 n_positive = int(N*frac_positive) # Number of postive training cases.
 n_negative = N - n_positive
 n_estimators = 4000
