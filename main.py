@@ -17,8 +17,10 @@ import sklearn.ensemble.weight_boosting
 import sys
 
 # Tunable parameters
-NPP=2 # Negative training cases per positive cases.
-n_positive = 80000 # Number of postive training cases.
+N = 270000
+frac_positive = 0.30
+n_positive = int(N*frac_positive) # Number of postive training cases.
+n_negative = N - n_positive
 n_estimators = 4000
 # min_samples_leaf = 1 + int(N/4000)
 min_samples_leaf = 5
@@ -251,12 +253,14 @@ def prefecture_distance(pref1, pref2):
     return result
 
 logger.info('Parameters: '
-            'NPP: {0:,}, '
-            'n_positive: {1:,}, '
-            'n_estimators: {2:,}, '
-            'min_samples_leaf: {3}, '
-            'max_features: {4}, '
-            'n_jobs: {5}'.format(NPP,
+            'N: {0:,}, '
+            'frac_positive: {1:,}, '
+            'n_positive: {2:,}, '
+            'n_estimators: {3:,}, '
+            'min_samples_leaf: {4}, '
+            'max_features: {5}, '
+            'n_jobs: {6}'.format(N,
+                                 frac_positive,
                                  n_positive,
                                  n_estimators,
                                  min_samples_leaf,
@@ -269,7 +273,9 @@ logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
 # prefecture_locations = read_file('prefecture_locations.csv', index='PREF_NAME')
 
 user = read_file('user_list.csv', 'USER_ID_hash')
-logger.info('Sample user: {0}'.format(list(itertools.islice(user.values(), 0, 1))[0]))
+
+for u in list(itertools.islice(user.values(), 0, 2)):
+    logger.info('Sample user record: {0}'.format(u))
 
 def coupon_computed_fields(coupon_list):
     # Add some computed fields in the coupon records
@@ -293,8 +299,8 @@ coupon_computed_fields(coupon_test)
 
 coupon.update(coupon_test)
 
-for c in list(itertools.islice(coupon.values(), 0, 3)):
-    logger.info('Sample coupon: {0}'.format(c))
+for c in list(itertools.islice(coupon.values(), 0, 2)):
+    logger.info('Sample coupon record: {0}'.format(c))
 
 missing_coupon = dict([('CAPSULE_TEXT', None),
                        ('GENRE_NAME', None),
@@ -334,9 +340,13 @@ for k,v in purchase.items():
     if v['I_DATE'] >= train_start_date:
         v['USER'] = user[v['USER_ID_hash']]
         v['COUPON'] = coupon[v['COUPON_ID_hash']]
+        v['PURCHASE_WEEK_DATE'] = start_of_week(v['I_DATE'])
         del v['USER_ID_hash'], v['COUPON_ID_hash']
     else:
         del purchase[k]
+
+for p in list(itertools.islice(purchase.values(), 0, 2)):
+    logger.info('Sample purchase record: {0}'.format(p))
         
 logger.info('Retained {0:,} purchase records between {1} and {2}'.format(
     len(purchase),
@@ -1052,10 +1062,7 @@ def features(user_history, coupon, date):
 user_history_list = tuple(user_history.values())
 coupon_list = tuple(coupon.values())
 
-purchase_sample = random_state.sample(tuple(purchase.values()), n_positive)
-
-# Let garbage collector work
-del purchase        
+purchase_sample = random_state.sample(list(purchase.values()), n_positive)
 
 logger.info('Accumulating stats for Naive Bayes in random sample')
 
@@ -1078,15 +1085,18 @@ positive_features = []
 positive_users = []
 positive_coupons = []
 for p in purchase_sample:
+    purchasing_user_hash = p['USER']['USER_ID_hash']
     purchased_coupon = p['COUPON']
     
-    uh  = user_history[p['USER']['USER_ID_hash']]
+    uh  = user_history[purchasing_user_hash]
 
     f = features(uh, purchased_coupon, start_of_week(p['I_DATE']))
     positive_features.append(f)
-    positive_users.append(p['USER']['USER_ID_hash'])
+    positive_users.append(purchasing_user_hash)
     positive_coupons.append(purchased_coupon['COUPON_ID_hash'])
 
+del purchase_sample
+    
 logger.info ('User space is {0} users'.format(len(user_history_list)))
 logger.info ('Sampling outcome space to obtain some non-purchase outcomes')
 
@@ -1094,26 +1104,34 @@ negative_features = []
 negative_users = []
 negative_coupons = []
 accessibility_misses = purchase_misses = 0
-for p in purchase_sample:
-    purchasing_user = p['USER']
-    purchasing_user_hash = purchasing_user['USER_ID_hash']
-    purchase_week_start = start_of_week(p['I_DATE'])
-    purchase_week_index = week_index(purchase_week_start)
 
-    for i in range(NPP):
+purchase_list = list(purchase.values())
+del purchase
+# Sample negative outcome space with replacement --- we want the possibility of multiple
+# negative outcomes for the same coupon, user, and week.
+for i in range(n_negative):
+    random_purchase = purchase_list[random_state.randrange(len(purchase_list))]
+    purchasing_user = random_purchase['USER']
+    purchasing_user_hash = purchasing_user['USER_ID_hash']
+    purchase_week_start = start_of_week(random_purchase['I_DATE'])
+    purchase_week_index = week_index(purchase_week_start)
+    
+    random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
+    while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
+           (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
         random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
-        while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
-               (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
-            random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
-            if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
-                accessibility_misses += 1
-            else:
-                purchase_misses += 1
-            
-        f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
-        negative_features.append(f)
-        negative_users.append(purchasing_user_hash)
-        negative_coupons.append(random_coupon['COUPON_ID_hash'])
+        if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
+            accessibility_misses += 1
+        else:
+            purchase_misses += 1
+    f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
+    negative_features.append(f)
+    negative_users.append(purchasing_user_hash)
+    negative_coupons.append(random_coupon['COUPON_ID_hash'])
+
+del purchase_list
+
+# Let garbage collector work
 
 logger.info('Misses due to accessibility: {0}; misses due to purchase {1}'.format(accessibility_misses, purchase_misses))
     
@@ -1122,16 +1140,20 @@ logger.info('Misses due to accessibility: {0}; misses due to purchase {1}'.forma
 del purchase_by_user_coupon_week
             
 positive_train_size = (2*n_positive) // 3
-train_features = positive_features[:positive_train_size] + negative_features[:NPP*positive_train_size]
-train_outcomes = positive_train_size * [1] + NPP*positive_train_size * [0]
-train_users = positive_users[:positive_train_size] + negative_users[:NPP*positive_train_size]
-train_coupons = positive_coupons[:positive_train_size] + negative_coupons[:NPP*positive_train_size]
+negative_train_size = (2*n_negative) // 3
+
+train_features = positive_features[:positive_train_size] + negative_features[:negative_train_size]
+train_outcomes = positive_train_size * [1] + negative_train_size * [0]
 
 positive_test_size = n_positive - positive_train_size
-test_features = positive_features[positive_train_size:] + negative_features[NPP*positive_train_size:]
-test_outcomes = positive_test_size * [1] + NPP*positive_test_size * [0]
-test_users = positive_users[positive_train_size:] + negative_users[NPP*positive_train_size:]
-test_coupons = positive_coupons[positive_train_size:] + negative_coupons[NPP*positive_train_size:]
+negative_test_size = n_negative - negative_train_size
+
+test_features = positive_features[positive_train_size:] + negative_features[negative_train_size:]
+
+test_users = positive_users[positive_train_size:] + negative_users[negative_train_size:]
+test_coupons = positive_coupons[positive_train_size:] + negative_coupons[negative_train_size:]
+
+test_outcomes = positive_test_size * [1] + negative_test_size * [0]
 
 logger.info('{0} training cases; {1} test cases'.format(len(train_features), len(test_features)))
 

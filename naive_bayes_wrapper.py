@@ -89,7 +89,7 @@ class Wrapper:
         class_value = self.class_getter(purchase['COUPON'])
 
         history_list = self.history_getter(user_history)
-        history_set = self.accumulate_history(history_list, purchase['I_DATE'])
+        history_set = self.accumulate_history(history_list, purchase['PURCHASE_WEEK_DATE'])
 
         self.estimator.add(class_value, history_set)
                 
