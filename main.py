@@ -32,6 +32,7 @@ n_positive = int(N*frac_positive) # Number of postive training cases.
 n_negative = N - n_positive
 n_estimators = 400
 # min_samples_leaf = 1 + int(N/4000)
+min_samples_split = 10
 min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
@@ -74,6 +75,7 @@ regressors = (
          random_state=classifier_random_state,
          n_estimators=n_estimators,
          min_samples_leaf=min_samples_leaf,
+         min_samples_split=min_samples_split,
          max_features=max_features,
          n_jobs=n_jobs,
          oob_score=oob_score
@@ -1052,21 +1054,22 @@ for i in range(n_negative):
     random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
            (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
-        random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
         if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
             accessibility_misses += 1
         else:
             purchase_misses += 1
+        random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
     f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
     negative_features.append(f)
     negative_users.append(purchasing_user_hash)
     negative_coupons.append(random_coupon['COUPON_ID_hash'])
 
+# Let garbage collector work
 del purchase_list
 
-# Let garbage collector work
-
-logger.info('Misses due to accessibility: {0}; misses due to purchase {1}'.format(accessibility_misses, purchase_misses))
+logger.info('From {0} negative cases: misses due to accessibility: {1}; misses due to purchase {2}'.format(n_negative, accessibility_misses, purchase_misses))
+negative_weight = float(n_negative+1)/float(purchase_misses) * n_positive/n_negative
+logger.info('Using weight of {0:7.2f} on negative samples.'.format(negative_weight))
     
 
 # Let garbage collector work
@@ -1077,6 +1080,7 @@ negative_train_size = (2*n_negative) // 3
 
 train_features = positive_features[:positive_train_size] + negative_features[:negative_train_size]
 train_outcomes = positive_train_size * [1] + negative_train_size * [0]
+train_weights = positive_train_size * [1] + negative_train_size * [negative_weight]
 
 positive_test_size = n_positive - positive_train_size
 negative_test_size = n_negative - negative_train_size
@@ -1093,7 +1097,7 @@ logger.info('{0} training cases; {1} test cases'.format(len(train_features), len
 for name, regressor in regressors:
     logger.info('Training {0}: {1}'.format(name, regressor))
     
-    regressor.fit(train_features, train_outcomes)
+    regressor.fit(train_features, train_outcomes, sample_weight=train_weights)
     test_predictions = regressor.predict(test_features)
     if hasattr(regressor, 'feature_importances_'):
         logger.info('Importances:')
