@@ -1,3 +1,4 @@
+import argparse
 import codecs
 import collections
 import csv
@@ -5,6 +6,13 @@ import datetime
 from functools import reduce
 import itertools
 import logging
+
+# Logging
+logger = logging.getLogger('')
+FORMAT = '%(asctime)-15s %(name)s %(message)s'
+logging.basicConfig(format=FORMAT)
+logger.setLevel(logging.DEBUG)
+
 import operator
 import naive_bayes
 import naive_bayes_wrapper
@@ -15,13 +23,14 @@ import sklearn
 import sklearn.ensemble
 import sklearn.ensemble.weight_boosting
 import sys
+import util
 
 # Tunable parameters
-N = 270000
+N = 1000
 frac_positive = 0.35
 n_positive = int(N*frac_positive) # Number of postive training cases.
 n_negative = N - n_positive
-n_estimators = 4000
+n_estimators = 400
 # min_samples_leaf = 1 + int(N/4000)
 min_samples_leaf = 5
 max_features = 9
@@ -33,13 +42,9 @@ seed=12345678
 random_state = random.Random(seed)
 classifier_random_state = numpy.random.RandomState(seed=seed)
 
-
 # Important constants
 train_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
-# train_start_date = datetime.datetime(year=2012, month=1, day=1, hour=0, minute=0)
-test_week_start_date = datetime.datetime(year=2012, month=6, day=24)
-
-train_period_in_weeks = (test_week_start_date - train_start_date).days // 7 
+test_start_date = datetime.datetime(year=2012, month=6, day=24)
 
 
 class WrappedClassifier:
@@ -120,119 +125,11 @@ def week_index(date):
 def start_of_week(date):
     return train_start_date + week_index(date)*datetime.timedelta(days=7)
 
-logger = logging.getLogger(__name__)
-FORMAT = '%(asctime)-15s %(message)s'
-logging.basicConfig(format=FORMAT)
-logger.setLevel(logging.DEBUG)
-
 def dump(d):
     for k, v in d.items():
         print()
         print('{0}:'.format(k))
         print('      {0}'.format(v))
-
-# translation = dict(pd.read_csv('CAPSULE_TEXT_Translation.csv').values)
-
-def date_mapper_max(d):
-    if d == 'NA':
-        timestamp = datetime.datetime.max
-    else:
-        try: 
-            timestamp = datetime.datetime.strptime(d, '%Y-%m-%d %H:%M:%S')
-        except:
-            timestamp = datetime.datetime.strptime(d, '%Y-%m-%d')
-                        
-    return timestamp
-
-def date_mapper_min(d):
-    if d == 'NA':
-        timestamp = datetime.datetime.min
-    else:
-        try: 
-            timestamp = datetime.datetime.strptime(d, '%Y-%m-%d %H:%M:%S')
-        except:
-            timestamp = datetime.datetime.strptime(d, '%Y-%m-%d')
-
-    return timestamp
-
-def int_mapper(d):
-    if d == 'NA':
-        return -999
-    else:
-        return int(d)
-
-def usable_date_mapper(d):
-    # usable_date fields have 0, 1, 2, or NA.  We'll treat this as a two-bit field and represent NA by 3.
-    if d == 'NA':
-        return 3
-    else:
-        return int(d)
-    
-def str_mapper(s):
-    if s == '':
-        return None
-    else:
-        return s
-
-mapper = collections.defaultdict(lambda: str_mapper)
-mapper.update(
-    {
-        'DISPEND': date_mapper_max,
-        'DISPFROM': date_mapper_min,
-        'I_DATE': date_mapper_max,
-        'REG_DATE': date_mapper_min,
-        'WITHDRAW_DATE': date_mapper_max,
-
-        'VALIDFROM': date_mapper_min,
-        'VALIDEND': date_mapper_max,
-
-        'AGE': int,
-        'CATALOG_PRICE': int,
-        'DISCOUNT_PRICE': int,
-        'ITEM_COUNT': int,
-        'PRICE_RATE': int,
-
-        'LATITUDE': float,
-        'LONGITUDE': float,
-
-        'DISPPERIOD': int_mapper,
-        'PAGE_SERIAL': int_mapper,
-        'PURCHASE_FLG': int_mapper,
-        'USABLE_DATE_MON': usable_date_mapper,
-        'USABLE_DATE_TUE': usable_date_mapper,
-        'USABLE_DATE_WED': usable_date_mapper,
-        'USABLE_DATE_THU': usable_date_mapper,
-        'USABLE_DATE_FRI': usable_date_mapper,
-        'USABLE_DATE_SAT': usable_date_mapper,
-        'USABLE_DATE_SUN': usable_date_mapper,
-        'USABLE_DATE_HOLIDAY': usable_date_mapper,
-        'USABLE_DATE_BEFORE_HOLIDAY': usable_date_mapper,
-        'VALIDPERIOD': int_mapper
-    }
-)
-
-def read_file (filename, index=None):
-    logger.info ('Loading {0}...'.format(filename))
-    with open(filename, "r") as user_file:
-        reader = csv.reader(user_file)
-
-        # Explicitly ignore any UTF-8 BOM marks left around as characters
-        # Using codecs.open wasn't any better.
-        header = tuple(map(lambda s: s.replace('\ufeff',''), next(reader)))
-
-        generator = (dict((h,mapper[h](i)) for h,i in zip(header, line))
-                     for line in reader)
-        
-        if index != None:
-            result = collections.OrderedDict(
-                (o[index], o)
-                for o in generator
-            )
-        else:
-            result = list(generator)
-            
-    logger.info ('{1:,} records loaded from {0}'.format(filename, len(result)))
-    return result
 
 def earth_distance(coordinate1, coordinate2):
     '''coordinates are (lat,lon) tuples in degrees'''
@@ -252,27 +149,42 @@ def prefecture_distance(pref1, pref2):
 
     return result
 
-logger.info('Parameters: '
-            'N: {0:,}, '
-            'frac_positive: {1:,}, '
-            'n_positive: {2:,}, '
-            'n_estimators: {3:,}, '
-            'min_samples_leaf: {4}, '
-            'max_features: {5}, '
-            'n_jobs: {6}'.format(N,
-                                 frac_positive,
-                                 n_positive,
-                                 n_estimators,
-                                 min_samples_leaf,
-                                 max_features,
-                                 n_jobs
-                             ))
+parser = argparse.ArgumentParser(description='Train, optionally test, and generate a coupon contest entry')
+parser.add_argument('--validate', help='Hold out last week as a test/validation set', action='store_true')
+args = parser.parse_args()
+
+if args.validate:
+    train_end_date = test_start_date - datetime.timedelta(days=7)
+else:
+    train_end_date = test_start_date
+
+train_period_in_weeks = (train_end_date - train_start_date).days // 7 
+
+logger.info(
+    'Parameters: '
+    'N: {0:,}, '
+    'frac_positive: {1:,}, '
+    'n_positive: {2:,}, '
+    'n_estimators: {3:,}, '
+    'min_samples_leaf: {4}, '
+    'max_features: {5}, '
+    'n_jobs: {6}, '
+    'validate: {7}'.format(N,
+                           frac_positive,
+                           n_positive,
+                           n_estimators,
+                           min_samples_leaf,
+                           max_features,
+                           n_jobs,
+                           args.validate,
+                       )
+)
 
 logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
 
-# prefecture_locations = read_file('prefecture_locations.csv', index='PREF_NAME')
+# prefecture_locations = util.read_file('prefecture_locations.csv', index='PREF_NAME')
 
-user = read_file('user_list.csv', 'USER_ID_hash')
+user = util.read_file('user_list.csv', 'USER_ID_hash')
 
 for u in list(itertools.islice(user.values(), 0, 2)):
     logger.info('Sample user record: {0}'.format(u))
@@ -291,10 +203,10 @@ def coupon_computed_fields(coupon_list):
             print(c['CATALOG_PRICE'])
             raise
     
-coupon = read_file('coupon_list_train.csv', 'COUPON_ID_hash')
+coupon = util.read_file('coupon_list_train.csv', 'COUPON_ID_hash')
 coupon_computed_fields(coupon)
 
-coupon_test = read_file('coupon_list_test.csv', 'COUPON_ID_hash')
+coupon_test = util.read_file('coupon_list_test.csv', 'COUPON_ID_hash')
 coupon_computed_fields(coupon_test)
 
 coupon.update(coupon_test)
@@ -331,19 +243,40 @@ missing_coupon = dict([('CAPSULE_TEXT', None),
                        ('QUANTIZED_CATALOG_PRICE', -999),
                    ])
 
-purchase = read_file('coupon_detail_train.csv', 'PURCHASEID_hash')
-train_area = read_file('coupon_area_train.csv')
-test_area = read_file('coupon_area_test.csv')
+purchase = util.read_file('coupon_detail_train.csv', 'PURCHASEID_hash')
+train_area = util.read_file('coupon_area_train.csv')
+test_area = util.read_file('coupon_area_test.csv')
+
+validation_purchase = {}
+validation_coupon = {}
 
 # Dereference user and coupon references and remove records outside the date range
 for k,v in purchase.items():
-    if v['I_DATE'] >= train_start_date:
-        v['USER'] = user[v['USER_ID_hash']]
-        v['COUPON'] = coupon[v['COUPON_ID_hash']]
-        v['PURCHASE_WEEK_DATE'] = start_of_week(v['I_DATE'])
-        del v['USER_ID_hash'], v['COUPON_ID_hash']
-    else:
+    v['USER'] = user[v['USER_ID_hash']]
+    v['COUPON'] = coupon[v['COUPON_ID_hash']]
+    v['PURCHASE_WEEK_DATE'] = start_of_week(v['I_DATE'])
+    del v['USER_ID_hash'], v['COUPON_ID_hash']
+
+    if v['I_DATE'] < train_start_date or v['I_DATE'] >= train_end_date:
         del purchase[k]
+        
+    if args.validate and v['I_DATE'] >= train_end_date and v['I_DATE'] < test_start_date:
+        validation_purchase.setdefault(v['USER']['USER_ID_hash'], set()).add(v['COUPON']['COUPON_ID_hash'])
+        validation_coupon[v['COUPON']['COUPON_ID_hash']] = v['COUPON']
+
+if args.validate:
+    logger.info(
+        'Validation week ({0}): {1} purchases; {2} purchasers; {3} distinct items; {4} max per purchaser'.format(
+            train_end_date,
+            sum([len(v) for v in validation_purchase.values()]),
+            len(validation_purchase),
+            len(validation_coupon),
+            max([len(v) for v in validation_purchase.values()])
+        )
+    )
+    for k,v in list(itertools.islice(validation_purchase.items(), 0, 2)):
+        logger.info('Sample validation week purchases: user: {0}, purchases: {1}'.format(k, v))
+    
 
 for p in list(itertools.islice(purchase.values(), 0, 2)):
     logger.info('Sample purchase record: {0}'.format(p))
@@ -354,7 +287,7 @@ logger.info('Retained {0:,} purchase records between {1} and {2}'.format(
     max(p['I_DATE'] for p in purchase.values())))
 
 # Dereference user and purchase references
-visit = read_file('coupon_visit_train.csv')
+visit = util.read_file('coupon_visit_train.csv')
 
 missing_coupons = set()
 found_coupons = set()
@@ -1182,37 +1115,56 @@ with open('features.csv', "w") as feature_output:
     for user, coupon, feature, outcome, prediction in zip(test_users, test_coupons, test_features, test_outcomes, test_predictions):
         feature_writer.writerow((user,coupon) + feature + (prediction, outcome))
 
-logger.info('Scoring and writing output file.')
-
-
-KEEP = 10
-with open("submission.csv", "w") as outputfile, \
-     open("probabilities.csv", "w") as probabilityfile:
-
-    writer = csv.writer(outputfile)
-    probability_writer = csv.writer(probabilityfile)
-    
-    writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
-    probability_writer.writerow(['USER_ID_hash'] + list(itertools.chain(*[('probability_{0}'.format(i), 'COUPON_ID_hash_{0}'.format(i)) for i in range(KEEP)])))
-
-    for user_hash in sorted(user_history.keys()):
-        a_user_history = user_history[user_hash]
-        a_user = a_user_history['user']
-
-        feature_hash_pairs = tuple(( (features(a_user_history, coupon, test_week_start_date),
-                                      coupon['COUPON_ID_hash'])
-                                     for coupon in coupon_test.values()
-                                     if days_accessible(a_user, coupon, test_week_start_date) > 0))
+def score_users(user_list, week_start_date, coupon_list, submission_file_name='submission.csv', probability_file_name='probabilities.csv'):
+    KEEP = 10
+    with open(submission_file_name, "w") as submission_file, \
+         open(probability_file_name, "w") as probability_file:
         
-        if len(feature_hash_pairs) > 0:
-            f, h = zip(*feature_hash_pairs)
-            probabilities = regressor.predict(f)
-            p_and_h = sorted(zip(probabilities, h), reverse=True)
-        else:
-            p_and_h = ()
+        writer = csv.writer(submission_file)
+        probability_writer = csv.writer(probability_file)
+        
+        writer.writerow(('USER_ID_hash', 'PURCHASED_COUPONS'))
+        probability_writer.writerow(['USER_ID_hash'] + list(itertools.chain(*[('probability_{0}'.format(i), 'COUPON_ID_hash_{0}'.format(i)) for i in range(KEEP)])))
+        
+        for user_hash in user_list:
+            a_user_history = user_history[user_hash]
+            a_user = a_user_history['user']
             
-        winners = ' '.join((h for p,h in p_and_h[:10] if p > 0))
-        writer.writerow((user_hash, winners))
-        probability_writer.writerow([user_hash] + list(itertools.chain(*p_and_h[:10])))
+            feature_hash_pairs = tuple(( (features(a_user_history, coupon, week_start_date),
+                                          coupon['COUPON_ID_hash'])
+                                         for coupon in coupon_list
+                                         if days_accessible(a_user, coupon, week_start_date) > 0))
+            
+            if len(feature_hash_pairs) > 0:
+                f, h = zip(*feature_hash_pairs)
+                probabilities = regressor.predict(f)
+                p_and_h = sorted(zip(probabilities, h), reverse=True)
+            else:
+                p_and_h = ()
+                
+            winners = ' '.join((h for p,h in p_and_h[:10] if p > 0))
+            writer.writerow((user_hash, winners))
+            probability_writer.writerow([user_hash] + list(itertools.chain(*p_and_h[:10])))
+
+logger.info('Scoring and writing output files.')
+
+if args.validate:
+    logger.info('Writing validation week purchases...')
+    with open('validation_purchases.csv', 'w') as validation_purchase_file:
+        writer = csv.writer(validation_purchase_file)
+        writer.writerow(('USER_ID_hash', 'PURCHASES'))
+        for user in sorted(validation_purchase.keys()):
+            writer.writerow([user, ' '.join(sorted(validation_purchase[user]))])
+    logger.info('Finished writing validation_purchases')
+
+    logger.info('Scoring validation week users/purchases...')
+    score_users(sorted(validation_purchase.keys()),
+                train_end_date,
+                validation_coupon.values(),
+                submission_file_name='validation.csv',
+                probability_file_name='validation_probabilities.csv')
+
+logger.info('Scoring test week users/purchases...')
+score_users(sorted(user_history.keys()), test_start_date, coupon_test.values())
 
 logger.info('Finished.')
