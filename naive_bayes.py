@@ -1,4 +1,7 @@
+import logging
 import math
+
+logger = logging.getLogger(__name__)
 
 class MNStrategy:
     def __init___(self):
@@ -61,26 +64,27 @@ class Estimator:
 
     def dump (self, limit=None):
         if limit:
-            print ('Limited to {0} category values'.format(limit))
+            logger.debug('Limited to {0} category values'.format(limit))
 
-        field_values = list(self.known_attribute_values)[0:limit]
-        print('value\n\t\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
+        field_values = list(sorted(self.known_attribute_values))[0:limit]
+        logger.debug('value\n\t\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
 
-        for fv in field_values:
-            print ('{0:>10}:\n\t{1:>10} {2}'.format(
-                fv,
-                self.row_count.get(fv, 0),
-                ' '.join(map('{0:>10}'.format, [self.count_by_class_and_attribute.get((fv,pv), 0) for pv in field_values]))
+        class_values = list(sorted(self.class_counts.keys()))[0:limit]
+        for cls in class_values:
+            loggger.debug('{0:>10}:\n\t{1:>10} {2}'.format(
+                cls,
+                self.row_count.get(cls, 0),
+                ' '.join(map('{0:>10}'.format, [self.count_by_class_and_attribute.get((cls,pv), 0) for pv in field_values]))
             ))
 
-        print ('column sums:\n\t{0:>10} {1}'.format(
+        logger.debug('column sums:\n\t{0:>10} {1}'.format(
             self.total_count,
-            ' '.join(map('{0:>10}'.format, (self.column_count.get(column, 0) for column in field_values[0:limit])))
+            ' '.join(map('{0:>10}'.format, (self.column_count.get(column, 0) for column in field_values)))
         ))
 
-        print ('item counts:\n\t{0:>10} {1}'.format(
+        logger.debug('class counts:\n\t{0:>10} {1}'.format(
             self.class_count,
-            ' '.join(map('{0:>10}'.format, (self.class_counts.get(fv,0) for fv in field_values[0:limit])))
+            ' '.join(map('{0:>10}'.format, (self.class_counts.get(cls,0) for cls in class_values)))
         ))
 
     def score (self, candidate_class_value, history_set):

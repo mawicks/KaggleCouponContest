@@ -1,8 +1,10 @@
 import datetime
 import functools
+import logging
 import naive_bayes
 import operator
 
+logger = logging.getLogger(__name__)
 
 class CacheableWrapper:
     """Naive Bayes Wrapper"""
@@ -45,7 +47,7 @@ class CacheableWrapper:
         self.estimator.add(class_value, history_set)
                 
     def dump (self, limit=None):
-        print ('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
+        logger.debug('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
 
         self.estimator.dump(limit)
 
@@ -58,54 +60,44 @@ class CacheableWrapper:
         candidate_class_value = self.class_getter(self.coupon_index[coupon_hash])
         return self.__score(candidate_class_value, user_hash, date)
     
-class Wrapper:
+class SimpleNBWrapper:
     """Naive Bayes Wrapper"""
-    def __init__ (self, strategy, purchase_or_visit, field_name):
-        """strategy is MNStrategy or BNStrategy
-           purchase_or_visit ('purchase' or 'visit') identifies which type of history
-           to accumulate stats on"""
+    def __init__ (self, user_history_index, coupon_index, user_attribute_name, coupon_class_name):
+        self.user_history_index = user_history_index
+        self.coupon_index = coupon_index
 
-        self.strategy = strategy
-        self.field_name = field_name
-        self.purchase_or_visit = purchase_or_visit
+        self.user_attribute_name = user_attribute_name
+        self.coupon_class_name = coupon_class_name
 
-        self.history_getter = operator.itemgetter(purchase_or_visit)
-        self.class_getter = operator.itemgetter(field_name)
+        self.user_attribute_getter = operator.itemgetter(user_attribute_name)
+        self.coupon_class_getter = operator.itemgetter(coupon_class_name)
 
-        self.estimator = naive_bayes.Estimator(strategy)
+        self.estimator = naive_bayes.Estimator(naive_bayes.BNStrategy())
         
     def __repr__ (self):
-        return "Wrapper({0},{1},{2})".format(self.strategy, self.purchase_or_visit, self.field_name)
-
-    def accumulate_history(self, history_list, date):
-        history = {}
-        for history_item in history_list:
-            if history_item['I_DATE'] < date:
-                fv = self.class_getter(history_item['COUPON'])
-                history[fv] = history.get(fv, 0) + 1
-        return history
-            
-    def add (self, purchase, user_history):
-        class_value = self.class_getter(purchase['COUPON'])
-
-        history_list = self.history_getter(user_history)
-        history_set = self.accumulate_history(history_list, purchase['PURCHASE_WEEK_DATE'])
-
-        self.estimator.add(class_value, history_set)
+        return "SimpleNBWrapper({0},{1},{2},{3})".format(self.user_history_index,
+                                                         self.coupon_index,
+                                                         self.user_attribute_name,
+                                                         self.coupon_class_name)
+    def add (self, purchase, user_hash):
+        class_value = self.coupon_class_getter(purchase['COUPON'])
+        user_value = self.user_attribute_getter(self.user_history_index[user_hash]['user'])
+        self.estimator.add(class_value, {user_value: 1})
                 
     def dump (self, limit=None):
-        print ('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
+        print ('{0}/{1}'.format(self.coupon_class_name, self.user_attribute_name))
 
         self.estimator.dump(limit)
 
-    def score (self, coupon, user_history, date):
-        candidate_class_value = self.class_getter(coupon)
-
-        history_list = self.history_getter(user_history)
-        history_set = self.accumulate_history(history_list, date)
-
-        return self.estimator.score(candidate_class_value, history_set)
-        
+    @functools.lru_cache(maxsize=256)
+    def __score(self, candidate_class_value, user_hash):
+        user_value = self.user_attribute_getter(self.user_history_index[user_hash]['user'])
+        return self.estimator.score(candidate_class_value, {user_value: 1})
+                                    
+    def score (self, coupon_hash, user_hash, date):
+        candidate_class_value = self.coupon_class_getter(self.coupon_index[coupon_hash])
+        return self.__score(candidate_class_value, user_hash)
+    
 if __name__ == "__main__":
 
     import collections
@@ -147,8 +139,8 @@ if __name__ == "__main__":
         (Purchase(coupon_arlington, purchase_date),History((visit_dc,))),
     ]
 
-    accumulator = Wrapper(naive_bayes.BNStrategy(), 'visit', 'city')
-    mn_accumulator = Wrapper(naive_bayes.MNStrategy(), 'visit', 'city')
+    accumulator = CacheableWrapper(naive_bayes.BNStrategy(), 'visit', 'city')
+    mn_accumulator = CacheableWrapper(naive_bayes.MNStrategy(), 'visit', 'city')
     
     for coupon_purchased, history in purchases:
         accumulator.add(coupon_purchased, history)

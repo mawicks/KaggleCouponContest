@@ -26,18 +26,22 @@ import sys
 import util
 
 # Tunable parameters
+N = 270000
 N = 1000
-frac_positive = 0.35
+frac_positive = 0.55
 n_positive = int(N*frac_positive) # Number of postive training cases.
 n_negative = N - n_positive
-n_estimators = 400
+n_estimators = 500
+test_fraction = 1.0/3.0
+negative_weight = 1.2
 # min_samples_leaf = 1 + int(N/4000)
 min_samples_split = 10
 min_samples_leaf = 5
 max_features = 9
 n_jobs=-1
 oob_score=False
-seed=12345678
+# seed=12345678
+seed=998877665544
 
 # Random number seeds
 random_state = random.Random(seed)
@@ -129,9 +133,8 @@ def start_of_week(date):
 
 def dump(d):
     for k, v in d.items():
-        print()
-        print('{0}:'.format(k))
-        print('      {0}'.format(v))
+        logger.debug('{0}:'.format(k))
+        logger.debug('      {0}'.format(v))
 
 def earth_distance(coordinate1, coordinate2):
     '''coordinates are (lat,lon) tuples in degrees'''
@@ -168,13 +171,15 @@ logger.info(
     'frac_positive: {1:,}, '
     'n_positive: {2:,}, '
     'n_estimators: {3:,}, '
-    'min_samples_leaf: {4}, '
-    'max_features: {5}, '
-    'n_jobs: {6}, '
-    'validate: {7}'.format(N,
+    'test_fraction: {4:6.3f}, '
+    'min_samples_leaf: {5}, '
+    'max_features: {6}, '
+    'n_jobs: {7}, '
+    'validate: {8}'.format(N,
                            frac_positive,
                            n_positive,
                            n_estimators,
+                           test_fraction,
                            min_samples_leaf,
                            max_features,
                            n_jobs,
@@ -184,17 +189,21 @@ logger.info(
 
 logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
 
-# prefecture_locations = util.read_file('prefecture_locations.csv', index='PREF_NAME')
+def user_computed_fields(user_list):
+    # Add some computed fields in the user records
+    for u in user_list.values():
+        u['QUANTIZED_AGE'] = (u['AGE'] // 5) * 5
 
 user = util.read_file('user_list.csv', 'USER_ID_hash')
+user_computed_fields(user)
 
 for u in list(itertools.islice(user.values(), 0, 2)):
     logger.info('Sample user record: {0}'.format(u))
 
 def coupon_computed_fields(coupon_list):
     # Add some computed fields in the coupon records
-    for h,c in coupon_list.items():
-    # Quantized various prices to make it easier to use Naive Bayers
+    for c in coupon_list.values():
+        # Quantized various prices to make it easier to use Naive Bayes
         try:
             c['QUANTIZED_PRICE_RATE'] = int((c['PRICE_RATE'] // 10) * 10.0)
             c['QUANTIZED_DISCOUNT_PRICE'] = int(2 ** (int(math.log2(0.01 + c['DISCOUNT_PRICE']) * 2.0) / 2.0))
@@ -204,7 +213,7 @@ def coupon_computed_fields(coupon_list):
             print(c['DISCOUNT_PRICE'])
             print(c['CATALOG_PRICE'])
             raise
-    
+        
 coupon = util.read_file('coupon_list_train.csv', 'COUPON_ID_hash')
 coupon_computed_fields(coupon)
 
@@ -880,6 +889,18 @@ accumulators = (
     naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_PRICE_RATE'),
     naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_DISCOUNT_PRICE'),
     naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_CATALOG_PRICE'),
+
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'small_area_name'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'large_area_name'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'ken_name'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'GENRE_NAME'),
+
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'small_area_name'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'large_area_name'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'ken_name'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'GENRE_NAME'),
 )
 
 class NBFeatureSet:
@@ -917,6 +938,17 @@ class NBFeatureSet:
             'qtz_discount_price_purchase_history_mn',
             'qtz_catalog_price_purchase_history_mn',
 
+            'age_small_area',
+            'age_large_area',
+            'age_ken',
+            'age_capsule_text',
+            'age_genre_name',
+
+            'gender_small_area',
+            'gender_large_area',
+            'gender_ken',
+            'gender_capsule_text',
+            'gender_genre_name',
         )
     
     def map(self, user_history, coupon, date):
@@ -955,6 +987,17 @@ class NBFeatureSet:
             accumulators[24].score(coupon_hash, user_hash, date),
             accumulators[25].score(coupon_hash, user_hash, date),
 
+            accumulators[26].score(coupon_hash, user_hash, date),
+            accumulators[27].score(coupon_hash, user_hash, date),
+            accumulators[28].score(coupon_hash, user_hash, date),
+            accumulators[29].score(coupon_hash, user_hash, date),
+            accumulators[30].score(coupon_hash, user_hash, date),
+
+            accumulators[31].score(coupon_hash, user_hash, date),
+            accumulators[32].score(coupon_hash, user_hash, date),
+            accumulators[33].score(coupon_hash, user_hash, date),
+            accumulators[34].score(coupon_hash, user_hash, date),
+            accumulators[35].score(coupon_hash, user_hash, date),
         )
     
 feature_extractors = (
@@ -1013,8 +1056,19 @@ accumulators[20].dump(10)
 accumulators[21].dump(10)
 accumulators[22].dump(10)
 accumulators[23].dump(10)
-print('End of dump')
-    
+
+accumulators[26].dump(10)
+accumulators[27].dump(10)
+accumulators[28].dump(10)
+accumulators[29].dump(10)
+accumulators[30].dump(10)
+
+accumulators[31].dump(10)
+accumulators[32].dump(10)
+accumulators[33].dump(10)
+accumulators[34].dump(10)
+accumulators[35].dump(10)
+
 logger.info('Building features for random sample')
 positive_features = []
 positive_users = []
@@ -1068,15 +1122,15 @@ for i in range(n_negative):
 del purchase_list
 
 logger.info('From {0} negative cases: misses due to accessibility: {1}; misses due to purchase {2}'.format(n_negative, accessibility_misses, purchase_misses))
-negative_weight = float(n_negative+1)/float(purchase_misses) * n_positive/n_negative
+# negative_weight = float(n_negative+1)/float(purchase_misses) * n_positive/n_negative
 logger.info('Using weight of {0:7.2f} on negative samples.'.format(negative_weight))
     
 
 # Let garbage collector work
 del purchase_by_user_coupon_week
             
-positive_train_size = (2*n_positive) // 3
-negative_train_size = (2*n_negative) // 3
+positive_train_size = int((1.0-test_fraction) * n_positive)
+negative_train_size = int((1.0-test_fraction) * n_negative)
 
 train_features = positive_features[:positive_train_size] + negative_features[:negative_train_size]
 train_outcomes = positive_train_size * [1] + negative_train_size * [0]
@@ -1167,8 +1221,8 @@ if args.validate:
                 validation_coupon.values(),
                 submission_file_name='validation.csv',
                 probability_file_name='validation_probabilities.csv')
-
-logger.info('Scoring test week users/purchases...')
-score_users(sorted(user_history.keys()), test_start_date, coupon_test.values())
+else:
+    logger.info('Scoring test week users/purchases...')
+    score_users(sorted(user_history.keys()), test_start_date, coupon_test.values())
 
 logger.info('Finished.')
