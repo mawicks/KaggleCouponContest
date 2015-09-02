@@ -71,7 +71,7 @@ class Estimator:
 
         class_values = list(sorted(self.class_counts.keys()))[0:limit]
         for cls in class_values:
-            loggger.debug('{0:>10}:\n\t{1:>10} {2}'.format(
+            logger.debug('{0:>10}:\n\t{1:>10} {2}'.format(
                 cls,
                 self.row_count.get(cls, 0),
                 ' '.join(map('{0:>10}'.format, [self.count_by_class_and_attribute.get((cls,pv), 0) for pv in field_values]))
