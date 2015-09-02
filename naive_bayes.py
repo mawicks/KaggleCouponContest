@@ -67,22 +67,24 @@ class Estimator:
             logger.debug('Limited to {0} category values'.format(limit))
 
         field_values = list(sorted(self.known_attribute_values))[0:limit]
-        logger.debug('value\n\t\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
+        logger.debug('value')
+        logger.debug('\t\tall {0}'.format(' '.join(map('{0:>10}'.format, field_values))))
 
         class_values = list(sorted(self.class_counts.keys()))[0:limit]
         for cls in class_values:
-            logger.debug('{0:>10}:\n\t{1:>10} {2}'.format(
-                cls,
+            logger.debug('{0:>10}:'.format(cls))
+            logger.debug('\t{0:>10} {1}'.format(
                 self.row_count.get(cls, 0),
                 ' '.join(map('{0:>10}'.format, [self.count_by_class_and_attribute.get((cls,pv), 0) for pv in field_values]))
             ))
-
-        logger.debug('column sums:\n\t{0:>10} {1}'.format(
+        logger.debug('column sums:')
+        logger.debug('\t{0:>10} {1}'.format(
             self.total_count,
             ' '.join(map('{0:>10}'.format, (self.column_count.get(column, 0) for column in field_values)))
         ))
 
-        logger.debug('class counts:\n\t{0:>10} {1}'.format(
+        logger.debug('class counts:')
+        logger.debug('\t{0:>10} {1}'.format(
             self.class_count,
             ' '.join(map('{0:>10}'.format, (self.class_counts.get(cls,0) for cls in class_values)))
         ))

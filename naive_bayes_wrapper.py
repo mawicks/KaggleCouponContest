@@ -85,7 +85,7 @@ class SimpleNBWrapper:
         self.estimator.add(class_value, {user_value: 1})
                 
     def dump (self, limit=None):
-        print ('{0}/{1}'.format(self.coupon_class_name, self.user_attribute_name))
+        logger.debug('{0}/{1}'.format(self.coupon_class_name, self.user_attribute_name))
 
         self.estimator.dump(limit)
 

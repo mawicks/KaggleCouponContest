@@ -198,7 +198,7 @@ user = util.read_file('user_list.csv', 'USER_ID_hash')
 user_computed_fields(user)
 
 for u in list(itertools.islice(user.values(), 0, 2)):
-    logger.info('Sample user record: {0}'.format(u))
+    logger.debug('Sample user record: {0}'.format(u))
 
 def coupon_computed_fields(coupon_list):
     # Add some computed fields in the coupon records
@@ -223,7 +223,7 @@ coupon_computed_fields(coupon_test)
 coupon.update(coupon_test)
 
 for c in list(itertools.islice(coupon.values(), 0, 2)):
-    logger.info('Sample coupon record: {0}'.format(c))
+    logger.debug('Sample coupon record: {0}'.format(c))
 
 missing_coupon = dict([('CAPSULE_TEXT', None),
                        ('GENRE_NAME', None),
@@ -286,11 +286,11 @@ if args.validate:
         )
     )
     for k,v in list(itertools.islice(validation_purchase.items(), 0, 2)):
-        logger.info('Sample validation week purchases: user: {0}, purchases: {1}'.format(k, v))
+        logger.debug('Sample validation week purchases: user: {0}, purchases: {1}'.format(k, v))
     
 
 for p in list(itertools.islice(purchase.values(), 0, 2)):
-    logger.info('Sample purchase record: {0}'.format(p))
+    logger.debug('Sample purchase record: {0}'.format(p))
         
 logger.info('Retained {0:,} purchase records between {1} and {2}'.format(
     len(purchase),
