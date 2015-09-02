@@ -27,7 +27,6 @@ import util
 
 # Tunable parameters
 N = 270000
-N = 1000
 frac_positive = 0.55
 n_positive = int(N*frac_positive) # Number of postive training cases.
 n_negative = N - n_positive
@@ -37,7 +36,7 @@ negative_weight = 1.2
 # min_samples_leaf = 1 + int(N/4000)
 min_samples_split = 10
 min_samples_leaf = 5
-max_features = 9
+max_features = 10
 n_jobs=-1
 oob_score=False
 # seed=12345678
@@ -192,7 +191,7 @@ logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
 def user_computed_fields(user_list):
     # Add some computed fields in the user records
     for u in user_list.values():
-        u['QUANTIZED_AGE'] = (u['AGE'] // 5) * 5
+        u['QUANTIZED_AGE'] = (u['AGE'] // 3) * 3
 
 user = util.read_file('user_list.csv', 'USER_ID_hash')
 user_computed_fields(user)
@@ -497,9 +496,9 @@ class AvailabilityFeatureSet:
 class UserPurchaseHistoryFeatureSet:
     def names(self):
         return(
-            'number_of_purchases',
-            'number_of_genre_purchases',
-            'number_of_capsule_purchases',
+#            'number_of_purchases',
+#            'number_of_genre_purchases',
+#            'number_of_capsule_purchases',
 
             'days_since_purchase',
             'days_since_2nd_purchase',
@@ -515,7 +514,7 @@ class UserPurchaseHistoryFeatureSet:
             'recency_capsule_purchase',
 
             'recency_small_area_purchase',
-            'recency_large_area_purchase',
+#            'recency_large_area_purchase',
             'recency_ken_purchase',
 
             'percent_from_genre_purchase',
@@ -532,12 +531,12 @@ class UserPurchaseHistoryFeatureSet:
 
             'in_previous_purchase_area',
 
-            'max_qty_genre',
-            'max_qty_capsule',
+#            'max_qty_genre',
+#            'max_qty_capsule',
 
-            'max_qty_ken',
-            'max_qty_large_area',
-            'max_qty_small_area',
+#            'max_qty_ken',
+#            'max_qty_large_area',
+#            'max_qty_small_area',
         )
 
     def map(self, user_history, coupon, date):
@@ -607,9 +606,9 @@ class UserPurchaseHistoryFeatureSet:
         days_since_purchase = (date - last_purchase).total_seconds()/86400.0
 
         result = (
-            purchase_count,
-            genre_count,
-            capsule_count,
+#            purchase_count,
+#            genre_count,
+#            capsule_count,
 
             days_since_purchase,
             (date - second_last_purchase).total_seconds()/86400.0,
@@ -625,7 +624,7 @@ class UserPurchaseHistoryFeatureSet:
             days_since_capsule - days_since_purchase,
 
             days_since_small_area_name - days_since_purchase,
-            days_since_large_area_name - days_since_purchase,
+#            days_since_large_area_name - days_since_purchase,
             days_since_ken_name - days_since_purchase,
 
             float(genre_count) / purchase_count if purchase_count > 0 else -999,
@@ -642,12 +641,12 @@ class UserPurchaseHistoryFeatureSet:
 
             len(small_area_by_coupon.get(coupon['COUPON_ID_hash'], set()).intersection(previous_purchase_area)),
 
-            max_qty_genre,
-            max_qty_capsule,
+#            max_qty_genre,
+#            max_qty_capsule,
 
-            max_qty_ken,
-            max_qty_large_area,
-            max_qty_small_area,
+#            max_qty_ken,
+#            max_qty_large_area,
+#            max_qty_small_area,
         )
 
         return result
@@ -657,8 +656,8 @@ class UserVisitHistoryFeatureSet:
     def names(self):
         return (
             'number_of_visits',
-            'number_of_genre_visits',
-            'number_of_capsule_visits',
+#            'number_of_genre_visits',
+#            'number_of_capsule_visits',
 
             'days_since_visit',
             'days_since_genre_visit',
@@ -684,7 +683,7 @@ class UserVisitHistoryFeatureSet:
             'relative_to_previous_price_rate_visit',
 
             'peak_hour',
-            'peak_dow',
+#            'peak_dow',
         )
 
     def map(self, user_history, coupon, date):
@@ -751,8 +750,8 @@ class UserVisitHistoryFeatureSet:
 
         result = (
             visit_count,
-            genre_count,
-            capsule_count,
+#            genre_count,
+#            capsule_count,
 
             days_since_visit,
             days_since_genre,
@@ -778,7 +777,7 @@ class UserVisitHistoryFeatureSet:
             coupon['PRICE_RATE'] - price_rate,
 
             peak_hour,
-            peak_dow,
+#            peak_dow,
         )
         return result
 
@@ -786,7 +785,7 @@ class SimpleUserFeatureSet:
     def names(self):
         return (
             'age',
-            'gender',
+#            'gender',
             'prefecture',
             'days_as_member')
 
@@ -794,7 +793,7 @@ class SimpleUserFeatureSet:
         user = user_history['user']
         return (
             user['AGE'],
-            gender_encoder.map(user['SEX_ID']),
+#            gender_encoder.map(user['SEX_ID']),
             prefecture_encoder.map(user['PREF_NAME']),
             (date - user['REG_DATE']).total_seconds()/86400.0
         )
@@ -804,13 +803,13 @@ class SimpleCouponFeatureSet:
     def names(self):
         return ('capsule_text',
                 'genre_name',
-                'large_area_name',
+#                'large_area_name',
                 'ken_name',
                 'small_area_name',
                 'price_rate',
                 'catalog_price',
                 'discount_price',
-                'price_reduction',
+#                'price_reduction',
                 'valid_period',
                 'days_on_display',
                 'display_days_left',
@@ -822,13 +821,13 @@ class SimpleCouponFeatureSet:
         return (
             capsule_encoder.map(coupon['CAPSULE_TEXT']),
             genre_name_encoder.map(coupon['GENRE_NAME']),
-            large_area_name_encoder.map(coupon['large_area_name']),
+#            large_area_name_encoder.map(coupon['large_area_name']),
             prefecture_encoder.map(coupon['ken_name']),
             small_area_name_encoder.map(coupon['small_area_name']),
             coupon['PRICE_RATE'],
             coupon['CATALOG_PRICE'],
             coupon['DISCOUNT_PRICE'],
-            coupon['CATALOG_PRICE']-coupon['DISCOUNT_PRICE'],
+#            coupon['CATALOG_PRICE']-coupon['DISCOUNT_PRICE'],
             coupon['VALIDPERIOD'],
             (date - coupon['DISPFROM']).total_seconds()/86400.0,
             (coupon['DISPEND'] - date).total_seconds()/86400.0,
@@ -918,17 +917,17 @@ class NBFeatureSet:
             'capsule_purchase_history_mn',
             'genre_purchase_history_mn',
             
-            'small_area_visit_history_nb',
-            'large_area_visit_history_nb',
-            'ken_visit_history_nb',
-            'capsule_visit_history_nb',
-            'genre_visit_history_nb',
+#            'small_area_visit_history_nb',
+#            'large_area_visit_history_nb',
+#            'ken_visit_history_nb',
+#            'capsule_visit_history_nb',
+#            'genre_visit_history_nb',
             
-            'small_area_purchase_history_nb',
-            'large_area_purchase_history_nb',
-            'ken_purchase_history_nb',
-            'capsule_text_purchase_history_nb',
-            'genre_name_purchase_history_nb',
+#            'small_area_purchase_history_nb',
+#            'large_area_purchase_history_nb',
+#            'ken_purchase_history_nb',
+#            'capsule_purchase_history_nb',
+#            'genre_purchase_history_nb',
 
             'qtz_price_rate_visit_history_mn',
             'qtz_discount_price_visit_history_mn',
@@ -945,7 +944,7 @@ class NBFeatureSet:
             'age_genre_name',
 
             'gender_small_area',
-            'gender_large_area',
+#            'gender_large_area',
             'gender_ken',
             'gender_capsule_text',
             'gender_genre_name',
@@ -967,17 +966,17 @@ class NBFeatureSet:
             accumulators[8].score(coupon_hash, user_hash, date),
             accumulators[9].score(coupon_hash, user_hash, date),
             
-            accumulators[10].score(coupon_hash, user_hash, date),
-            accumulators[11].score(coupon_hash, user_hash, date),
-            accumulators[12].score(coupon_hash, user_hash, date),
-            accumulators[13].score(coupon_hash, user_hash, date),
-            accumulators[14].score(coupon_hash, user_hash, date),
+#            accumulators[10].score(coupon_hash, user_hash, date),
+#            accumulators[11].score(coupon_hash, user_hash, date),
+#            accumulators[12].score(coupon_hash, user_hash, date),
+#            accumulators[13].score(coupon_hash, user_hash, date),
+#            accumulators[14].score(coupon_hash, user_hash, date),
             
-            accumulators[15].score(coupon_hash, user_hash, date),
-            accumulators[16].score(coupon_hash, user_hash, date),
-            accumulators[17].score(coupon_hash, user_hash, date),
-            accumulators[18].score(coupon_hash, user_hash, date),
-            accumulators[19].score(coupon_hash, user_hash, date),
+#            accumulators[15].score(coupon_hash, user_hash, date),
+#            accumulators[16].score(coupon_hash, user_hash, date),
+#            accumulators[17].score(coupon_hash, user_hash, date),
+#            accumulators[18].score(coupon_hash, user_hash, date),
+#            accumulators[19].score(coupon_hash, user_hash, date),
 
             accumulators[20].score(coupon_hash, user_hash, date),
             accumulators[21].score(coupon_hash, user_hash, date),
@@ -994,7 +993,7 @@ class NBFeatureSet:
             accumulators[30].score(coupon_hash, user_hash, date),
 
             accumulators[31].score(coupon_hash, user_hash, date),
-            accumulators[32].score(coupon_hash, user_hash, date),
+#            accumulators[32].score(coupon_hash, user_hash, date),
             accumulators[33].score(coupon_hash, user_hash, date),
             accumulators[34].score(coupon_hash, user_hash, date),
             accumulators[35].score(coupon_hash, user_hash, date),
@@ -1010,7 +1009,7 @@ feature_extractors = (
     SimpleCouponFeatureSet(),
     CouponUsableDateFeatureSet(),
 #   JointFeatureSet(),   # This is just distance.
-    RandomFeatureSet()
+#    RandomFeatureSet()
 )
 
 
