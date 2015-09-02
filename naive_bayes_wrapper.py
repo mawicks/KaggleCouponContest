@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class CacheableWrapper:
     """Naive Bayes Wrapper"""
-    def __init__ (self, strategy, user_history_index, coupon_index, purchase_or_visit, field_name):
+    def __init__ (self, strategy, user_history_index, coupon_index, purchase_or_visit, class_name, attribute_name, from_coupon=True):
         """strategy is MNStrategy or BNStrategy
            purchase_or_visit ('purchase' or 'visit') identifies which type of history
            to accumulate stats on"""
@@ -19,26 +19,37 @@ class CacheableWrapper:
         self.coupon_index = coupon_index
         
         self.purchase_or_visit = purchase_or_visit
-        self.field_name = field_name
+        self.class_name = class_name
+        self.attribute_name = attribute_name
 
         self.history_getter = operator.itemgetter(purchase_or_visit)
-        self.class_getter = operator.itemgetter(field_name)
+        self.class_getter = operator.itemgetter(class_name)
+
+        self.from_coupon = from_coupon
+
+        if from_coupon:
+            self.attribute_getter = lambda x: x['COUPON'][attribute_name]
+        else:
+            self.attribute_getter = operator.itemgetter(attribute_name)
 
         self.estimator = naive_bayes.Estimator(strategy)
         
     def __repr__ (self):
-        return "CacheableWrapper({0},{1},{2},{3},{4})".format(self.strategy,
-                                                              self.user_history_index,
-                                                              self.coupon_index,
-                                                              self.purchase_or_visit,
-                                                              self.field_name)
+        return "CacheableWrapper({0},{1},{2},{3},{4},{5},from_coupon={6})".format(self.strategy,
+                                                                                  self.user_history_index,
+                                                                                  self.coupon_index,
+                                                                                  self.purchase_or_visit,
+                                                                                  self.class_name,
+                                                                                  self.attribute_name,
+                                                                                  self.from_coupon
+        )
     @functools.lru_cache(maxsize=256)
     def accumulate_history(self, user_hash, date):
         history = {}
         for history_item in self.history_getter(self.user_history_index[user_hash]):
             if history_item['I_DATE'] < date:
-                fv = self.class_getter(history_item['COUPON'])
-                history[fv] = history.get(fv, 0) + 1
+                av = self.attribute_getter(history_item)
+                history[av] = history.get(av, 0) + 1
         return history
 
     def add (self, purchase, user_hash):
@@ -47,7 +58,7 @@ class CacheableWrapper:
         self.estimator.add(class_value, history_set)
                 
     def dump (self, limit=None):
-        logger.debug('{0}: {1}'.format(self.purchase_or_visit, self.field_name))
+        logger.debug('{0}: {1}/{2}'.format(self.purchase_or_visit, self.class_name, self.attribute_name))
 
         self.estimator.dump(limit)
 

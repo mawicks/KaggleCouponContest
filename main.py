@@ -213,7 +213,7 @@ def coupon_computed_fields(coupon_list):
             print(c['DISCOUNT_PRICE'])
             print(c['CATALOG_PRICE'])
             raise
-        
+
 coupon = util.read_file('coupon_list_train.csv', 'COUPON_ID_hash')
 coupon_computed_fields(coupon)
 
@@ -255,6 +255,7 @@ missing_coupon = dict([('CAPSULE_TEXT', None),
                    ])
 
 purchase = util.read_file('coupon_detail_train.csv', 'PURCHASEID_hash')
+
 train_area = util.read_file('coupon_area_train.csv')
 test_area = util.read_file('coupon_area_test.csv')
 
@@ -263,6 +264,8 @@ validation_coupon = {}
 
 # Dereference user and coupon references and remove records outside the date range
 for k,v in purchase.items():
+    v['HOUR'] = v['I_DATE'].hour
+    v['DAY'] = v['I_DATE'].weekday()
     v['USER'] = user[v['USER_ID_hash']]
     v['COUPON'] = coupon[v['COUPON_ID_hash']]
     v['PURCHASE_WEEK_DATE'] = start_of_week(v['I_DATE'])
@@ -304,6 +307,9 @@ missing_coupons = set()
 found_coupons = set()
 
 for v in visit:
+    v['HOUR'] = v['I_DATE'].hour
+    v['DAY'] = v['I_DATE'].weekday()
+    
     coupon_id_hash = v['VIEW_COUPON_ID_hash']
     if coupon_id_hash in coupon:
         v['COUPON']= coupon[coupon_id_hash]
@@ -858,37 +864,37 @@ class JointFeatureSet:
 
 # dump(user_history)
 accumulators = (
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'small_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'large_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'ken_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'small_area_name', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'large_area_name', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'ken_name', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME', 'GENRE_NAME'),
 
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'small_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'large_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'ken_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'small_area_name', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'large_area_name', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'ken_name', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'CAPSULE_TEXT', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'GENRE_NAME', 'GENRE_NAME'),
     
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'small_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'large_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'ken_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'small_area_name', 'small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'large_area_name', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'ken_name', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT','CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME', 'GENRE_NAME'),
     
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'small_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'large_area_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'ken_name'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'CAPSULE_TEXT'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'GENRE_NAME'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'small_area_name','small_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'large_area_name', 'large_area_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'ken_name', 'ken_name'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'CAPSULE_TEXT', 'CAPSULE_TEXT'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.BNStrategy(), user_history, coupon, 'purchase', 'GENRE_NAME', 'GENRE_NAME'),
 
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_PRICE_RATE'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_DISCOUNT_PRICE'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_CATALOG_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_PRICE_RATE', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_DISCOUNT_PRICE', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'QUANTIZED_CATALOG_PRICE', 'QUANTIZED_CATALOG_PRICE'),
     
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_PRICE_RATE'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_DISCOUNT_PRICE'),
-    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_CATALOG_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_PRICE_RATE', 'QUANTIZED_PRICE_RATE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_DISCOUNT_PRICE', 'QUANTIZED_DISCOUNT_PRICE'),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'QUANTIZED_CATALOG_PRICE', 'QUANTIZED_CATALOG_PRICE'),
 
     naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'small_area_name'),
     naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'QUANTIZED_AGE', 'large_area_name'),
@@ -901,6 +907,11 @@ accumulators = (
     naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'ken_name'),
     naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'CAPSULE_TEXT'),
     naive_bayes_wrapper.SimpleNBWrapper(user_history, coupon, 'SEX_ID', 'GENRE_NAME'),
+
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT', 'DAY', from_coupon=False),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME', 'DAY', from_coupon=False),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT', 'HOUR', from_coupon=False),
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME', 'HOUR', from_coupon=False),
 )
 
 class NBFeatureSet:
@@ -949,6 +960,11 @@ class NBFeatureSet:
             'gender_ken',
             'gender_capsule_text',
             'gender_genre_name',
+
+            'day_vs_capsule',
+            'day_vs_genre',
+            'hour_vs_capsule',
+            'hour_vs_genre',
         )
     
     def map(self, user_history, coupon, date):
@@ -998,6 +1014,11 @@ class NBFeatureSet:
             accumulators[33].score(coupon_hash, user_hash, date),
             accumulators[34].score(coupon_hash, user_hash, date),
             accumulators[35].score(coupon_hash, user_hash, date),
+            
+            accumulators[36].score(coupon_hash, user_hash, date),
+            accumulators[37].score(coupon_hash, user_hash, date),
+            accumulators[38].score(coupon_hash, user_hash, date),
+            accumulators[39].score(coupon_hash, user_hash, date),
         )
     
 feature_extractors = (
@@ -1068,6 +1089,11 @@ accumulators[32].dump(10)
 accumulators[33].dump(10)
 accumulators[34].dump(10)
 accumulators[35].dump(10)
+
+accumulators[36].dump(10)
+accumulators[37].dump(10)
+accumulators[38].dump(10)
+accumulators[39].dump(10)
 
 logger.info('Building features for random sample')
 positive_features = []
