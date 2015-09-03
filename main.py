@@ -911,6 +911,8 @@ accumulators = (
     naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME', 'DAY', from_coupon=False),
     naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'CAPSULE_TEXT', 'HOUR', from_coupon=False),
     naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'visit', 'GENRE_NAME', 'HOUR', from_coupon=False),
+    
+    naive_bayes_wrapper.CacheableWrapper(naive_bayes.MNStrategy(), user_history, coupon, 'purchase', 'small_area_name', 'SMALL_AREA_NAME', from_coupon=False),
 )
 
 class NBFeatureSet:
@@ -964,6 +966,8 @@ class NBFeatureSet:
             'day_vs_genre',
             'hour_vs_capsule',
             'hour_vs_genre',
+
+            'residence_small_area_vs_small_area',
         )
     
     def map(self, user_history, coupon, date):
@@ -1018,6 +1022,8 @@ class NBFeatureSet:
             accumulators[37].score(coupon_hash, user_hash, date),
             accumulators[38].score(coupon_hash, user_hash, date),
             accumulators[39].score(coupon_hash, user_hash, date),
+
+            accumulators[40].score(coupon_hash, user_hash, date),
         )
     
 feature_extractors = (
