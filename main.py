@@ -25,26 +25,28 @@ import sklearn.ensemble.weight_boosting
 import sys
 import util
 
-# Tunable parameters
-N = 270000
-N = 20000
+# TUNABLE PARAMETERS
+# Training and test size selection
+N = 202020
 frac_positive = 0.54
-n_positive = int(N*frac_positive) # Number of postive training cases.
-n_negative = N - n_positive
-n_estimators = 500
-test_fraction = 1.0/3.0
-test_fraction = 0.05
 negative_weight = 1.2
-# min_samples_leaf = 1 + int(N/4000)
+test_fraction = 0.01
+beta = 3.0
+
+# Estimator parameters
+n_estimators1 = 500
+n_estimators2 = 2000
 min_samples_split = 10
 min_samples_leaf = 5
 max_features = 10
 n_jobs=-1
 oob_score=False
-beta = 3.158
 
 # seed=12345678
 seed=998877665544
+
+n_positive = int(N*frac_positive) # Number of postive training cases.
+n_negative = N - n_positive
 
 # Random number seeds
 random_state = random.Random(seed)
@@ -82,7 +84,7 @@ regressors = (
     ('RandomForestRegressor',
      sklearn.ensemble.RandomForestRegressor(
          random_state=classifier_random_state,
-         n_estimators=n_estimators,
+         n_estimators=n_estimators1,
          min_samples_leaf=min_samples_leaf,
          min_samples_split=min_samples_split,
          max_features=max_features,
@@ -93,7 +95,7 @@ regressors = (
     ('RandomForestClassifier',
      WrappedClassifier(sklearn.ensemble.RandomForestClassifier(
          random_state=classifier_random_state,
-         n_estimators=n_estimators,
+         n_estimators=n_estimators1,
          min_samples_leaf=min_samples_leaf,
          max_features=max_features,
          n_jobs=n_jobs,
@@ -104,25 +106,25 @@ regressors = (
     ('GradientBootingRegressor',
      sklearn.ensemble.gradient_boosting.GradientBoostingRegressor(
          random_state=classifier_random_state,
-         n_estimators=n_estimators,
+         n_estimators=n_estimators1,
          min_samples_leaf=min_samples_leaf,
          max_features=max_features)),
     
     ('GradientBoostingClassifier',
      WrappedClassifier(sklearn.ensemble.gradient_boosting.GradientBoostingClassifier(
          random_state=classifier_random_state,
-         n_estimators=n_estimators,
+         n_estimators=n_estimators1,
          min_samples_leaf=min_samples_leaf,
          max_features=max_features))),
 
     ('AdaboostRegressor',
      sklearn.ensemble.weight_boosting.AdaBoostRegressor(
-         n_estimators=n_estimators,
+         n_estimators=n_estimators1,
      )),
     
     ('AdaboostClassifier',
      WrappedClassifier(sklearn.ensemble.weight_boosting.AdaBoostClassifier(
-         n_estimators=n_estimators,
+         n_estimators=n_estimators1,
      ))),
 
 )
@@ -213,7 +215,7 @@ logger.info(
     'N: {0:,}, '
     'frac_positive: {1:,}, '
     'n_positive: {2:,}, '
-    'n_estimators: {3:,}, '
+    'n_estimators1: {3:,}, '
     'test_fraction: {4:6.3f}, '
     'min_samples_leaf: {5}, '
     'max_features: {6}, '
@@ -223,7 +225,7 @@ logger.info(
     .format(N,
             frac_positive,
             n_positive,
-            n_estimators,
+            n_estimators1,
             test_fraction,
             min_samples_leaf,
             max_features,
@@ -1223,9 +1225,11 @@ test_outcomes = positive_test_size * [1] + negative_test_size * [0]
 logger.info('{0} training cases; {1} test cases'.format(len(train_features), len(test_features)))
 
 for name, regressor in regressors:
-    logger.info('Training {0}: {1}'.format(name, regressor))
+    regressor.set_params(n_estimators=n_estimators2)
     
+    logger.info('Training {0}: {1}'.format(name, regressor))
     regressor.fit(train_features, train_outcomes, sample_weight=train_weights)
+    
     test_predictions = regressor.predict(test_features)
     if hasattr(regressor, 'feature_importances_'):
         logger.info('Importances:')
