@@ -1262,7 +1262,7 @@ beta_frac,beta_whole = math.modf(beta)
 for i in range(n_negative):
     max_score = -1
     # Handle non-integer values of beta by interpolating between the integer values.
-    for j in range(beta_whole + (beta_frac > random_state.random())):
+    for j in range(int(beta_whole) + (beta_frac > random_state.random())):
         purchasing_user_hash,purchase_week_index = purchase_list[random_state.randrange(len(purchase_list))]
         purchasing_user = user[purchasing_user_hash]
         purchase_week_start = week_from_index(purchase_week_index)
