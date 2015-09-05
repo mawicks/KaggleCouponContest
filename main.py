@@ -1255,13 +1255,14 @@ negative_coupons = []
 negative_weights = []
 accessibility_misses = purchase_misses = 0
 # Sample negative outcome space with replacement --- we want the possibility of multiple
-# negative outcomes for the same coupon, user, and week.
+# negative outcomes for mthe same coupon, user, and week.
 accepted = 0
 
+beta_frac,beta_whole = math.modf(beta)
 for i in range(n_negative):
     max_score = -1
     # Handle non-integer values of beta by interpolating between the integer values.
-    for j in range(int(beta) + (math.modf(beta)[0] > random_state.random())):
+    for j in range(beta_whole + (beta_frac > random_state.random())):
         purchasing_user_hash,purchase_week_index = purchase_list[random_state.randrange(len(purchase_list))]
         purchasing_user = user[purchasing_user_hash]
         purchase_week_start = week_from_index(purchase_week_index)
