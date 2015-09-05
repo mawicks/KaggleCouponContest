@@ -27,11 +27,13 @@ import util
 
 # Tunable parameters
 N = 270000
-frac_positive = 0.55
+N = 20000
+frac_positive = 0.54
 n_positive = int(N*frac_positive) # Number of postive training cases.
 n_negative = N - n_positive
 n_estimators = 500
 test_fraction = 1.0/3.0
+test_fraction = 0.05
 negative_weight = 1.2
 # min_samples_leaf = 1 + int(N/4000)
 min_samples_split = 10
@@ -39,6 +41,8 @@ min_samples_leaf = 5
 max_features = 10
 n_jobs=-1
 oob_score=False
+beta = 3.158
+
 # seed=12345678
 seed=998877665544
 
@@ -50,6 +54,8 @@ classifier_random_state = numpy.random.RandomState(seed=seed)
 train_start_date = datetime.datetime(year=2011, month=7, day=3, hour=0, minute=0)
 test_start_date = datetime.datetime(year=2012, month=6, day=24)
 
+def random_list_element(random_state, l):
+    return l[random_state.randrange(len(l))]
 
 class WrappedClassifier:
     """Wrap the brain-dead classifier API to make it look more like a regressor."""
@@ -127,8 +133,11 @@ regressors = regressors[0:1]
 def week_index(date):
     return int((date - train_start_date).days / 7.0)
 
+def week_from_index(index):
+    return train_start_date + index*datetime.timedelta(days=7)
+
 def start_of_week(date):
-    return train_start_date + week_index(date)*datetime.timedelta(days=7)
+    return week_from_index(week_index(date))
 
 def dump(d):
     for k, v in d.items():
@@ -153,8 +162,43 @@ def prefecture_distance(pref1, pref2):
 
     return result
 
+def days_accessible(user, coupon, week_start_date):
+    """Returns the number of days the coupon was accessible to the user during
+    the week beginning on week_start_date"""
+
+    start = max(week_start_date, user['REG_DATE'], coupon['DISPFROM'])
+    end = min(week_start_date+datetime.timedelta(days=7), user['WITHDRAW_DATE'], coupon['DISPEND'])
+
+    try:
+        interval = (end-start).total_seconds()/86400.0
+
+    except:
+        print('end: ', end)
+        print('start: ', start)
+        print('end-start:', end-start)
+        
+    return interval if interval > 0 else 0
+
+def coupon_days_accessible(coupon, week_start_date):
+    """Returns the number of days the coupon was accessible to anyone during week beginning on week_start_date"""
+
+    start = max(week_start_date, coupon['DISPFROM'])
+    end = min(week_start_date+datetime.timedelta(days=7), coupon['DISPEND'])
+
+    try:
+        interval = (end-start).total_seconds()/86400.0
+
+    except:
+        print('end: ', end)
+        print('start: ', start)
+        print('end-start:', end-start)
+        interval = 0.0
+        
+    return interval if interval > 0 else 0
+
 parser = argparse.ArgumentParser(description='Train, optionally test, and generate a coupon contest entry')
 parser.add_argument('--validate', help='Hold out last week as a test/validation set', action='store_true')
+parser.add_argument('--score', help='Generate a submission file with recommendations', action='store_true')
 args = parser.parse_args()
 
 if args.validate:
@@ -174,16 +218,19 @@ logger.info(
     'min_samples_leaf: {5}, '
     'max_features: {6}, '
     'n_jobs: {7}, '
-    'validate: {8}'.format(N,
-                           frac_positive,
-                           n_positive,
-                           n_estimators,
-                           test_fraction,
-                           min_samples_leaf,
-                           max_features,
-                           n_jobs,
-                           args.validate,
-                       )
+    'validate: {8}, '
+    'beta: {9}'
+    .format(N,
+            frac_positive,
+            n_positive,
+            n_estimators,
+            test_fraction,
+            min_samples_leaf,
+            max_features,
+            n_jobs,
+            args.validate,
+            beta,
+        )
 )
 
 logger.info('train_period_in_weeks: {0}'.format(train_period_in_weeks))
@@ -199,7 +246,7 @@ user_computed_fields(user)
 for u in list(itertools.islice(user.values(), 0, 2)):
     logger.debug('Sample user record: {0}'.format(u))
 
-def coupon_computed_fields(coupon_list):
+def add_coupon_computed_fields(coupon_list):
     # Add some computed fields in the coupon records
     for c in coupon_list.values():
         # Quantized various prices to make it easier to use Naive Bayes
@@ -214,10 +261,20 @@ def coupon_computed_fields(coupon_list):
             raise
 
 coupon = util.read_file('coupon_list_train.csv', 'COUPON_ID_hash')
-coupon_computed_fields(coupon)
+add_coupon_computed_fields(coupon)
+
+coupon_accessibility_by_week = {}
+for c in coupon.values():
+    for i in range(train_period_in_weeks):
+        date = week_from_index(i)
+        if coupon_days_accessible(c, date) > 0:
+            coupon_accessibility_by_week.setdefault(i, set()).add(c['COUPON_ID_hash'])
+
+for i in coupon_accessibility_by_week.keys():
+    coupon_accessibility_by_week[i] = list(coupon_accessibility_by_week[i])
 
 coupon_test = util.read_file('coupon_list_test.csv', 'COUPON_ID_hash')
-coupon_computed_fields(coupon_test)
+add_coupon_computed_fields(coupon_test)
 
 coupon.update(coupon_test)
 
@@ -361,9 +418,12 @@ logger.info('First/last purchase dates: {0}/{1}'.format(first_purchase_date, las
 
 # Purchase
 purchase_by_user = collections.OrderedDict()
+purchase_by_user_week = collections.OrderedDict()
 purchase_by_user_coupon_week = collections.OrderedDict()
+
 for p in purchase.values():
     purchase_by_user.setdefault(p['USER']['USER_ID_hash'], []).append(p)
+    purchase_by_user_week[(p['USER']['USER_ID_hash'], week_index(p['I_DATE']))] = 1
     purchase_by_user_coupon_week[(p['USER']['USER_ID_hash'], p['COUPON']['COUPON_ID_hash'], week_index(p['I_DATE']))] = 1
 
     # Verify the assumption that purchases do not occur outside the ad display window or when the user is not registered.
@@ -475,22 +535,6 @@ class ExperimentalFeatureSet:
             week_index(date),
         )
 
-def days_accessible(user, coupon, week_start_date):
-    """Returns the number of days the coupon was accessible to the user during
-    the week beginning on week_start_date"""
-
-    start = max(week_start_date, user['REG_DATE'], coupon['DISPFROM'])
-    end = min(week_start_date+datetime.timedelta(days=7), user['WITHDRAW_DATE'], coupon['DISPEND'])
-
-    try:
-        interval = (end-start).total_seconds()/86400.0
-
-    except:
-        print('end: ', end)
-        print('start: ', start)
-        print('end-start:', end-start)
-        
-    return interval if interval > 0 else 0
 
 class AvailabilityFeatureSet:
     def names(self):
@@ -1125,32 +1169,33 @@ negative_users = []
 negative_coupons = []
 accessibility_misses = purchase_misses = 0
 
-purchase_list = list(purchase.values())
+purchase_list = list(purchase_by_user_week.keys())
 del purchase
 # Sample negative outcome space with replacement --- we want the possibility of multiple
 # negative outcomes for the same coupon, user, and week.
 for i in range(n_negative):
-    random_purchase = purchase_list[random_state.randrange(len(purchase_list))]
-    purchasing_user = random_purchase['USER']
-    purchasing_user_hash = purchasing_user['USER_ID_hash']
-    purchase_week_start = start_of_week(random_purchase['I_DATE'])
-    purchase_week_index = week_index(purchase_week_start)
+    purchasing_user_hash,purchase_week_index = purchase_list[random_state.randrange(len(purchase_list))]
+    purchasing_user = user[purchasing_user_hash]
+    purchase_week_start = week_from_index(purchase_week_index)
     
-    random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
+    random_coupon_hash = random_list_element(random_state, coupon_accessibility_by_week[purchase_week_index])
+    random_coupon = coupon[random_coupon_hash]
+    
     while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
-           (purchasing_user_hash, random_coupon['COUPON_ID_hash'], purchase_week_index) in purchase_by_user_coupon_week):
+           (purchasing_user_hash, random_coupon_hash, purchase_week_index) in purchase_by_user_coupon_week):
         if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
             accessibility_misses += 1
         else:
             purchase_misses += 1
-        random_coupon = coupon_list[random_state.randrange(len(coupon_list))]
+
+        random_coupon_hash = random_list_element(random_state, coupon_accessibility_by_week[purchase_week_index])
+        random_coupon = coupon[random_coupon_hash]
+
     f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
     negative_features.append(f)
     negative_users.append(purchasing_user_hash)
     negative_coupons.append(random_coupon['COUPON_ID_hash'])
 
-# Let garbage collector work
-del purchase_list
 
 logger.info('From {0} negative cases: misses due to accessibility: {1}; misses due to purchase {2}'.format(n_negative, accessibility_misses, purchase_misses))
 # negative_weight = float(n_negative+1)/float(purchase_misses) * n_positive/n_negative
@@ -1158,7 +1203,7 @@ logger.info('Using weight of {0:7.2f} on negative samples.'.format(negative_weig
     
 
 # Let garbage collector work
-del purchase_by_user_coupon_week
+# del purchase_by_user_coupon_week
             
 positive_train_size = int((1.0-test_fraction) * n_positive)
 negative_train_size = int((1.0-test_fraction) * n_negative)
@@ -1171,10 +1216,8 @@ positive_test_size = n_positive - positive_train_size
 negative_test_size = n_negative - negative_train_size
 
 test_features = positive_features[positive_train_size:] + negative_features[negative_train_size:]
-
 test_users = positive_users[positive_train_size:] + negative_users[negative_train_size:]
 test_coupons = positive_coupons[positive_train_size:] + negative_coupons[negative_train_size:]
-
 test_outcomes = positive_test_size * [1] + negative_test_size * [0]
 
 logger.info('{0} training cases; {1} test cases'.format(len(train_features), len(test_features)))
@@ -1201,9 +1244,86 @@ with open('features.csv', "w") as feature_output:
     feature_writer = csv.writer(feature_output)
     feature_writer.writerow(tuple(('USER_ID_hash','COUPON_ID_hash') + feature_names + ('prediction', 'outcome')))
     
-    for user, coupon, feature, outcome, prediction in zip(test_users, test_coupons, test_features, test_outcomes, test_predictions):
-        feature_writer.writerow((user,coupon) + feature + (prediction, outcome))
+    for u, c, f, o, p in zip(test_users, test_coupons, test_features, test_outcomes, test_predictions):
+        feature_writer.writerow((u,c) + f + (p, o))
 
+
+# ***** BOOSTING EXPERIMENT ****
+negative_features = []
+negative_users = []
+negative_coupons = []
+negative_weights = []
+accessibility_misses = purchase_misses = 0
+# Sample negative outcome space with replacement --- we want the possibility of multiple
+# negative outcomes for the same coupon, user, and week.
+accepted = 0
+
+for i in range(n_negative):
+    max_score = -1
+    # Handle non-integer values of beta by interpolating between the integer values.
+    for j in range(int(beta) + (math.modf(beta)[0] > random_state.random())):
+        purchasing_user_hash,purchase_week_index = purchase_list[random_state.randrange(len(purchase_list))]
+        purchasing_user = user[purchasing_user_hash]
+        purchase_week_start = week_from_index(purchase_week_index)
+    
+        random_coupon_hash = random_list_element(random_state, coupon_accessibility_by_week[purchase_week_index])
+        random_coupon = coupon[random_coupon_hash]
+
+        while (days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0 or
+               (purchasing_user_hash, random_coupon_hash, purchase_week_index) in purchase_by_user_coupon_week):
+            if days_accessible(purchasing_user, random_coupon, purchase_week_start) == 0:
+                accessibility_misses += 1
+            else:
+                purchase_misses += 1
+                
+            random_coupon_hash = random_list_element(random_state, coupon_accessibility_by_week[purchase_week_index])
+            random_coupon = coupon[random_coupon_hash]
+
+        f = features(user_history[purchasing_user_hash], random_coupon, purchase_week_start)
+        score = (regressors[0][1].predict([f]))[0]
+        if score > max_score:
+            max_score = score
+            f_max = f
+            user_hash_max = purchasing_user_hash
+            coupon_hash_max = random_coupon_hash
+
+    negative_features.append(f_max)
+    negative_users.append(user_hash_max)
+    negative_coupons.append(coupon_hash_max)
+    
+    if i % 100 == 0:
+        logger.info('{0}; last probability was {1}'.format(i, max_score))
+
+logger.info('From {0} negative cases: misses due to accessibility: {1}; misses due to purchase {2}'.format(n_negative, accessibility_misses, purchase_misses))
+# negative_weight = float(n_negative+1)/float(purchase_misses) * n_positive/n_negative
+    
+train_features = positive_features[:positive_train_size] + negative_features[:negative_train_size]
+train_outcomes = positive_train_size * [1] + negative_train_size * [0]
+train_weights = positive_train_size * [1] + negative_weights[:negative_train_size]
+    
+test_features = positive_features[positive_train_size:] + negative_features[negative_train_size:]
+test_users = positive_users[positive_train_size:] + negative_users[negative_train_size:]
+test_coupons = positive_coupons[positive_train_size:] + negative_coupons[negative_train_size:]
+test_outcomes = positive_test_size * [1] + negative_test_size * [0]
+
+for name, regressor in regressors:
+    logger.info('Training {0}: {1}'.format(name, regressor))
+    
+    regressor.fit(train_features, train_outcomes)
+    test_predictions = regressor.predict(test_features)
+    if hasattr(regressor, 'feature_importances_'):
+        logger.info('Importances:')
+        for i,n in sorted(zip(regressor.feature_importances_, feature_names), reverse=True):
+            logger.info('{0:>45}: {1:6.4f}'.format(n, i))
+        
+    logger.info('Performance:')
+    logger.info('{0:>24}: {1:7.5f}/{2:7.5f}'.format('min/max test prediction', min(test_predictions), max(test_predictions)))
+    logger.info('{0:>24}: {1:6.4f}'.format('Default classifier/regressor score', regressor.score(test_features, test_outcomes)))
+    logger.info('{0:>24}: {1:6.4f}'.format('MSE', sklearn.metrics.mean_squared_error(test_outcomes, test_predictions)))
+    logger.info('{0:>24}: {1:5.3f}'.format('auroc', sklearn.metrics.roc_auc_score(test_outcomes, test_predictions)))
+    logger.info('{0:>24}: {1:5.3f}'.format('log loss', sklearn.metrics.log_loss(test_outcomes, test_predictions)))
+
+        
 def score_users(user_list, week_start_date, coupon_list, submission_file_name='submission.csv', probability_file_name='probabilities.csv'):
     KEEP = 10
     with open(submission_file_name, "w") as submission_file, \
@@ -1252,7 +1372,8 @@ if args.validate:
                 validation_coupon.values(),
                 submission_file_name='validation.csv',
                 probability_file_name='validation_probabilities.csv')
-else:
+
+if args.score:
     logger.info('Scoring test week users/purchases...')
     score_users(sorted(user_history.keys()), test_start_date, coupon_test.values())
 
