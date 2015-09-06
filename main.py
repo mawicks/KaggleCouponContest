@@ -1225,8 +1225,6 @@ test_outcomes = positive_test_size * [1] + negative_test_size * [0]
 logger.info('{0} training cases; {1} test cases'.format(len(train_features), len(test_features)))
 
 for name, regressor in regressors:
-    regressor.set_params(n_estimators=n_estimators2)
-    
     logger.info('Training {0}: {1}'.format(name, regressor))
     regressor.fit(train_features, train_outcomes, sample_weight=train_weights)
     
@@ -1312,8 +1310,9 @@ test_coupons = positive_coupons[positive_train_size:] + negative_coupons[negativ
 test_outcomes = positive_test_size * [1] + negative_test_size * [0]
 
 for name, regressor in regressors:
-    logger.info('Training {0}: {1}'.format(name, regressor))
+    regressor.set_params(n_estimators=n_estimators2)
     
+    logger.info('Training {0}: {1}'.format(name, regressor))
     regressor.fit(train_features, train_outcomes)
     test_predictions = regressor.predict(test_features)
     if hasattr(regressor, 'feature_importances_'):
