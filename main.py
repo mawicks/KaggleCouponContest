@@ -65,8 +65,11 @@ class WrappedClassifier:
     def __init__(self, classifier):
         self.classifier = classifier
 
-    def fit(self, x, y):
-        self.classifier.fit(x, y)
+    def __repr__(self):
+        return ("WrappedClassifier({0})".format(self.classifier))
+
+    def fit(self, x, y, sample_weight=None):
+        self.classifier.fit(x, y, sample_weight=sample_weight)
         #        self.oob_score_ = self.classifier.oob_score_
 
         if hasattr(self.classifier, "oob_decision_function_"):
@@ -78,8 +81,13 @@ class WrappedClassifier:
     def predict(self, x):
         return self.classifier.predict_proba(x)[:,1]
 
+    def set_params(self, **kwargs):
+        self.classifier.set_params(**kwargs)
+
     def score(self, x, y):
         return self.classifier.score(x, y)
+
+    
 
 regressors = ( 
     ('RandomForestRegressor',
