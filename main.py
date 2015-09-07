@@ -28,6 +28,7 @@ import util
 # TUNABLE PARAMETERS
 # Training and test size selection
 N = 202020
+N = 306000
 frac_positive = 0.54
 negative_weight = 1.2
 test_fraction = 0.01
